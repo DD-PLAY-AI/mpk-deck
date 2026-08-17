@@ -15,7 +15,12 @@ class MPKController:
         self._port = None
 
     def find_port_name(self) -> str | None:
-        for name in mido.get_input_names():
+        try:
+            names = mido.get_input_names()
+        except Exception:
+            logger.warning("no MIDI backend available")
+            return None
+        for name in names:
             if self._port_name_contains.lower() in name.lower():
                 return name
         return None

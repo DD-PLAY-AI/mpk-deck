@@ -1,0 +1,26 @@
+[project]
+name = "mpk-deck"
+version = "0.1.0"
+description = "Software Stream Deck: Action Engine + Personal Deck UI + AKAI MPK mini MK2 MIDI control"
+requires-python = ">=3.13"
+dependencies = [
+    "PySide6>=6.7",
+    "mido>=1.3",
+    "PyYAML>=6.0",
+    "pycaw>=20240210; sys_platform == 'win32'",
+    "pywin32>=306; sys_platform == 'win32'",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+midi-hardware = ["python-rtmidi>=1.5; sys_platform == 'win32'"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

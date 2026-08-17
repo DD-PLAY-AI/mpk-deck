@@ -1,0 +1,9 @@
+bindings:
+  - control: pad_1
+    type: trigger
+    action: launch_program
+    params: { path: "C:/Windows/System32/notepad.exe" }
+  - control: knob_1
+    type: continuous
+    action: set_system_volume
+    params: {}

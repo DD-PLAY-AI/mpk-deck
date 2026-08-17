@@ -39,3 +39,21 @@ def test_focus_window_missing_param_does_not_call_finder():
     calls = []
     handlers.focus_window({}, finder=lambda title: calls.append(title))
     assert calls == []
+
+
+def test_set_system_volume_calls_setter_with_clamped_value():
+    calls = []
+    handlers.set_system_volume({}, 1.5, volume_setter=calls.append)
+    assert calls == [1.0]
+
+
+def test_set_system_volume_clamps_negative_value():
+    calls = []
+    handlers.set_system_volume({}, -0.2, volume_setter=calls.append)
+    assert calls == [0.0]
+
+
+def test_set_system_volume_passes_through_valid_value():
+    calls = []
+    handlers.set_system_volume({}, 0.42, volume_setter=calls.append)
+    assert calls == [0.42]

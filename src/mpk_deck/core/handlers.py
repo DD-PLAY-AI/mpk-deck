@@ -66,3 +66,21 @@ def _default_find_and_focus(title_substring: str) -> None:
         win32gui.SetForegroundWindow(results[0])
     else:
         logger.info("focus_window: no window matching %r", title_substring)
+
+
+def set_system_volume(params: dict, value: float, *, volume_setter=None) -> None:
+    """`value` is a normalized 0.0-1.0 level (already converted by the caller)."""
+    setter = volume_setter or _default_volume_setter
+    setter(max(0.0, min(1.0, value)))
+
+
+def _default_volume_setter(value: float) -> None:
+    from ctypes import POINTER, cast
+
+    from comtypes import CLSCTX_ALL
+    from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+
+    devices = AudioUtilities.GetSpeakers()
+    interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+    volume = cast(interface, POINTER(IAudioEndpointVolume))
+    volume.SetMasterVolumeLevelScalar(value, None)

@@ -7,21 +7,22 @@ KNOB_LABELS_TOP = ["knob_1", "knob_2", "knob_3", "knob_4"]
 KNOB_LABELS_BOTTOM = ["knob_5", "knob_6", "knob_7", "knob_8"]
 
 LEFT_BUTTONS = [
-    ("arp_on_off", "ON/OFF"),
-    ("tap_tempo", "TAP"),
-    ("octave_down", "OCT ▼"),
-    ("octave_up", "OCT ▲"),
-    ("full_level", "FULL LV"),
-    ("note_repeat", "NOTE RPT"),
+    ("arp_on_off", "ON", "Arp On/Off"),
+    ("tap_tempo", "TAP", "Tap Tempo"),
+    ("octave_down", "OCT▼", "Octave Down"),
+    ("octave_up", "OCT▲", "Octave Up"),
+    ("full_level", "FULL", "Full Level"),
+    ("note_repeat", "RPT", "Note Repeat"),
 ]
 RIGHT_BUTTONS = [
-    ("bank_ab", "BANK A/B"),
-    ("cc", "CC"),
-    ("prog_change", "PROG CHG"),
-    ("prog_select", "PROG SEL"),
+    ("bank_ab", "BANK", "Bank A/B"),
+    ("cc", "CC", "CC"),
+    ("prog_change", "CHG", "Prog Change"),
+    ("prog_select", "SEL", "Prog Select"),
 ]
 
 BTN_W, BTN_H = 34, 16
+BTN_QSS = "QPushButton { font-size: 7px; padding: 0px; margin: 0px; }"
 
 
 class ExpandedView(QWidget):
@@ -37,9 +38,11 @@ class ExpandedView(QWidget):
         self._joystick.clicked.connect(lambda: self.control_clicked.emit("joystick"))
 
         self._buttons: dict[str, QPushButton] = {}
-        for control, text in LEFT_BUTTONS + RIGHT_BUTTONS:
+        for control, text, tooltip in LEFT_BUTTONS + RIGHT_BUTTONS:
             btn = QPushButton(text, self)
             btn.setFixedSize(BTN_W, BTN_H)
+            btn.setStyleSheet(BTN_QSS)
+            btn.setToolTip(tooltip)
             btn.clicked.connect(lambda _checked=False, c=control: self.control_clicked.emit(c))
             self._buttons[control] = btn
 
@@ -81,8 +84,8 @@ class ExpandedView(QWidget):
         self._joystick.move(left_x, left_y)
         row_y = left_y + 40 + 5
         for i in range(0, len(LEFT_BUTTONS), 2):
-            a_control, _ = LEFT_BUTTONS[i]
-            b_control, _ = LEFT_BUTTONS[i + 1]
+            a_control = LEFT_BUTTONS[i][0]
+            b_control = LEFT_BUTTONS[i + 1][0]
             self._buttons[a_control].move(left_x, row_y)
             self._buttons[b_control].move(left_x + BTN_W + 4, row_y)
             row_y += BTN_H + 5
@@ -104,7 +107,7 @@ class ExpandedView(QWidget):
         btn_row_x = knob_x + int(0.02 * w)
         btn_row_y = int(0.32 * h)
         bx = btn_row_x
-        for control, _ in RIGHT_BUTTONS[:3]:
+        for control, _, _ in RIGHT_BUTTONS[:3]:
             self._buttons[control].move(bx, btn_row_y)
             bx += BTN_W + 4
         self._buttons["prog_select"].move(bx + 24 - 4, btn_row_y)

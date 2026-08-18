@@ -50,6 +50,7 @@ class MainWindow(QMainWindow):
         toggle.clicked.connect(self._toggle_mode)
 
         container = QWidget(self)
+        container.setStyleSheet("background-color: #23242b;")
         layout = QVBoxLayout(container)
         layout.addWidget(toggle)
         layout.addWidget(self._mini_view)

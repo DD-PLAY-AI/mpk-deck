@@ -1,6 +1,9 @@
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QFrame, QLabel, QPushButton, QWidget
 
+from mpk_deck.config import ACCENT_RGB
+from mpk_deck.ui.window_drag import DraggableMixin
+
 PAD_LABELS_TOP = ["pad_5", "pad_6", "pad_7", "pad_8"]
 PAD_LABELS_BOTTOM = ["pad_1", "pad_2", "pad_3", "pad_4"]
 KNOB_LABELS_TOP = ["knob_1", "knob_2", "knob_3", "knob_4"]
@@ -25,7 +28,7 @@ BTN_W, BTN_H = 34, 16
 BTN_QSS = "QPushButton { font-size: 7px; padding: 0px; margin: 0px; }"
 
 
-class ExpandedView(QWidget):
+class ExpandedView(DraggableMixin, QWidget):
     control_clicked = Signal(str)
 
     def __init__(self, dark: bool = False, parent=None) -> None:
@@ -69,7 +72,7 @@ class ExpandedView(QWidget):
         self._layout_controls()
 
     def set_dark(self, dark: bool) -> None:
-        bg = "rgba(20,22,28,217)" if dark else "rgba(120,110,255,90)"
+        bg = "rgba(20,22,28,217)" if dark else f"rgba({ACCENT_RGB},90)"
         self.setStyleSheet(f"QWidget#expandedPanel {{ background: {bg}; border-radius: 16px; }}")
 
     def resizeEvent(self, event) -> None:  # noqa: N802 (Qt override)

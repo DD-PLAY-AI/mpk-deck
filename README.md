@@ -11,6 +11,11 @@ open URLs, move/resize windows, switch workspaces).
 
 - **Action Engine** - central dispatcher; every input (MPK, UI, future voice/AI)
   calls into the same registered, configurable actions.
+- **Natural-language action config** - describe a binding in plain language
+  (e.g. "open KakaoTalk") in the action config dialog instead of picking it
+  manually; Claude Haiku proposes the binding, you still review and save it.
+  Requires `ANTHROPIC_API_KEY` in a local `.env` file - every other feature
+  in this app works with zero API keys or network access.
 - **Personal Deck UI** - compact PySide6 widget showing configurable
   buttons/pages, reflecting and triggering the same actions as the MPK.
 - **MPK MIDI integration** - event-driven MIDI input from the AKAI MPK mini

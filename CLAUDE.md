@@ -108,30 +108,22 @@ tool-forced 구조화 출력으로만 호출하고, 절대 자동 실행/저장�
 - 하드웨어 종속 코드(win32gui, pycaw, mido/rtmidi)는 어댑터 함수 내부로
   격리하고 지연 import — 모듈 자체는 해당 하드웨어/OS 없이도 import 가능.
 
-## 현재 진행 상태 (2026-08-18 기준)
+## 현재 진행 상태
 
-Phase 1 MVP 코드 구현은 완료되어 `main`에 머지됨 (Action Engine/Registry,
-핸들러, MIDI 번역기/컨트롤러, Mini/Expanded UI, Action Config Dialog).
-Windows 창 제어는 `focus_window`만 구현 — move/resize/always-on-top은
-아직 없음.
+Phase 1 MVP + UI 리디자인 + 자연어 액션 설정까지 `main`에 구현/커밋/푸시
+완료 (Action Engine/Registry, 핸들러, MIDI 번역기/컨트롤러, Mini/Expanded
+UI, Action Config Dialog, `core/nl_action.py`). pytest 전체 통과.
 
-이후 UI 리디자인 라운드(테스트 48/48 통과, 아직 커밋 전 — 사용자 실행
-확인 대기 중):
-- 정사각 패드, 클릭/더블클릭 분리, 프레임리스 위젯형 창 + 트레이 아이콘,
-  Light(투명)/Dark 테마 토글, 설치 프로그램 검색 피커가 있는
-  ActionConfigDialog 리디자인 — 전부 구현/유닛테스트/스크린샷 검증 완료.
-- 검증 못한 것 1개: 반투명 프레임리스 최상위 창은 `QWidget.grab()`/
-  `render()`로 자동 캡처하면 배경 페인트가 사라지는 Qt 캡처 한계에 걸림
-  (자식 위젯 단독 캡처는 정상 — 스타일 자체는 검증됨). 실제 데스크톱
-  컴포지팅(DWM)에서 어떻게 보이는지는 `python -m mpk_deck`로 직접 확인
-  필요.
+미해결/미검증 항목:
+- Windows 창 제어는 `focus_window`만 구현 — move/resize/always-on-top 없음.
+- 반투명 프레임리스 최상위 창은 `QWidget.grab()`/`render()` 자동 캡처가
+  안 됨(Qt 캡처 한계, 자식 위젯 단독 캡처는 정상 — 스타일 자체는 검증됨).
+  실제 데스크톱 컴포지팅(DWM)에서 어떻게 보이는지는 `python -m mpk_deck`로
+  직접 확인 필요 (사용자 몫, 아직 미확인).
+- 자연어 액션 설정 기능은 실제 API 키로 실행 검증 안 됨 — `.env`에
+  `ANTHROPIC_API_KEY` 넣고 `python -m mpk_deck`에서 다이얼로그 열어 확인 필요.
 - `ExpandedView`는 이번 라운드 범위 밖 (레이블 잘림 수정만 완료, 테마/
   더블클릭 분리는 다음 라운드).
-
-자연어 액션 설정 기능(`core/nl_action.py` + `ActionConfigDialog` 연동)
-구현/테스트 완료, `main`에 커밋+푸시됨 (2026-08-19). 실제 API 키로 실행
-검증은 사용자 몫 — `.env`에 `ANTHROPIC_API_KEY` 넣고 `python -m mpk_deck`
-에서 다이얼로그 열어 확인.
 
 다음 라운드(아직 브레인스토밍 전, 코딩 시작하지 말 것): ExpandedView의
 조이스틱을 마우스 드래그로 상하좌우 스크롤 액션에 매핑 + 물리 MPK의 실제

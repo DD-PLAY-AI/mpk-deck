@@ -1,23 +1,25 @@
-from PySide6.QtCore import QTimer, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import QApplication, QPushButton, QWidget
 
-from mpk_deck.config import ACCENT_HEX
+from mpk_deck.config import ACCENT_HEX, ACCENT_RGB
 from mpk_deck.core.action_registry import Binding
 from mpk_deck.ui.action_config_dialog import ACTION_GLYPHS, ACTION_LABELS
 from mpk_deck.ui.grid_layout import compute_pad_rects
-from mpk_deck.ui.window_drag import DraggableMixin
+from mpk_deck.ui.window_grip import WindowGripMixin
 
 PAD_ORDER = ["pad_5", "pad_6", "pad_7", "pad_8", "pad_1", "pad_2", "pad_3", "pad_4"]
 
 COLS, ROWS = 4, 2
-MARGIN, SPACING = 12, 8
+ASPECT = COLS / ROWS
+MARGIN, SPACING = 20, 8
+BORDER_VISUAL = 2  # thin visible edge-light inside the wider (BORDER) grab zone
 
 LIGHT_QSS = f"""
 QWidget#miniPanel {{
     background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
         stop:0 rgba(255,255,255,120), stop:1 rgba(235,240,255,150));
     border-radius: 16px;
-    border: 1px solid rgba(255,255,255,190);
+    border: {BORDER_VISUAL}px solid rgba({ACCENT_RGB},130);
 }}
 QPushButton {{
     background: rgba(255,255,255,140);
@@ -36,7 +38,7 @@ QWidget#miniPanel {{
     background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
         stop:0 rgba(20,22,28,217), stop:1 rgba(10,12,16,191));
     border-radius: 16px;
-    border: 1px solid rgba(255,255,255,26);
+    border: {BORDER_VISUAL}px solid rgba({ACCENT_RGB},100);
 }}
 QPushButton {{
     background: rgba(255,255,255,18);
@@ -59,6 +61,7 @@ class PadButton(QPushButton):
 
     def __init__(self, text: str, parent=None) -> None:
         super().__init__(text, parent)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
         self._click_timer = QTimer(self)
         self._click_timer.setSingleShot(True)
         self._click_timer.timeout.connect(self.activated.emit)
@@ -73,13 +76,14 @@ class PadButton(QPushButton):
         super().mouseDoubleClickEvent(event)
 
 
-class MiniView(DraggableMixin, QWidget):
+class MiniView(WindowGripMixin, QWidget):
     pad_activated = Signal(str)
     pad_configure_requested = Signal(str)
 
     def __init__(self, labels: dict[str, str] | None = None, dark: bool = False, parent=None) -> None:
-        super().__init__(parent)
+        super().__init__(parent, aspect=ASPECT, min_width=240)
         self.setObjectName("miniPanel")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self._labels = labels or {}
         self._pads: dict[str, PadButton] = {}
         for control in PAD_ORDER:

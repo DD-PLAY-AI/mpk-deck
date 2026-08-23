@@ -2,12 +2,15 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QFrame, QLabel, QPushButton, QWidget
 
 from mpk_deck.config import ACCENT_RGB
-from mpk_deck.ui.window_drag import DraggableMixin
+from mpk_deck.ui.window_grip import WindowGripMixin
 
 PAD_LABELS_TOP = ["pad_5", "pad_6", "pad_7", "pad_8"]
 PAD_LABELS_BOTTOM = ["pad_1", "pad_2", "pad_3", "pad_4"]
 KNOB_LABELS_TOP = ["knob_1", "knob_2", "knob_3", "knob_4"]
 KNOB_LABELS_BOTTOM = ["knob_5", "knob_6", "knob_7", "knob_8"]
+
+ASPECT = 312 / 184
+BORDER_VISUAL = 2  # thin visible edge-light inside the wider (window_grip.BORDER) grab zone
 
 LEFT_BUTTONS = [
     ("arp_on_off", "ON", "Arp On/Off"),
@@ -28,16 +31,18 @@ BTN_W, BTN_H = 34, 16
 BTN_QSS = "QPushButton { font-size: 7px; padding: 0px; margin: 0px; }"
 
 
-class ExpandedView(DraggableMixin, QWidget):
+class ExpandedView(WindowGripMixin, QWidget):
     control_clicked = Signal(str)
 
     def __init__(self, dark: bool = False, parent=None) -> None:
-        super().__init__(parent)
+        super().__init__(parent, aspect=ASPECT, min_width=480)
         self.setObjectName("expandedPanel")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setMinimumSize(480, 284)  # keeps the 312:184 aspect ratio roughly intact
 
         self._joystick = QPushButton("JOY", self)
         self._joystick.setFixedSize(40, 40)
+        self._joystick.setCursor(Qt.CursorShape.PointingHandCursor)
         self._joystick.clicked.connect(lambda: self.control_clicked.emit("joystick"))
 
         self._buttons: dict[str, QPushButton] = {}
@@ -46,12 +51,14 @@ class ExpandedView(DraggableMixin, QWidget):
             btn.setFixedSize(BTN_W, BTN_H)
             btn.setStyleSheet(BTN_QSS)
             btn.setToolTip(tooltip)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.clicked.connect(lambda _checked=False, c=control: self.control_clicked.emit(c))
             self._buttons[control] = btn
 
         self._pads: dict[str, QPushButton] = {}
         for control in PAD_LABELS_TOP + PAD_LABELS_BOTTOM:
             btn = QPushButton(control.upper(), self)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.clicked.connect(lambda _checked=False, c=control: self.control_clicked.emit(c))
             self._pads[control] = btn
 
@@ -65,6 +72,7 @@ class ExpandedView(DraggableMixin, QWidget):
         for _ in range(15):
             key = QFrame(self)
             key.setFrameShape(QFrame.Shape.Box)
+            key.setCursor(Qt.CursorShape.PointingHandCursor)
             key.mousePressEvent = lambda _event, k=len(self._keys): self.control_clicked.emit(f"key_{k}")
             self._keys.append(key)
 
@@ -73,7 +81,11 @@ class ExpandedView(DraggableMixin, QWidget):
 
     def set_dark(self, dark: bool) -> None:
         bg = "rgba(20,22,28,217)" if dark else f"rgba({ACCENT_RGB},90)"
-        self.setStyleSheet(f"QWidget#expandedPanel {{ background: {bg}; border-radius: 16px; }}")
+        border_alpha = 100 if dark else 130
+        self.setStyleSheet(
+            f"QWidget#expandedPanel {{ background: {bg}; border-radius: 16px; "
+            f"border: {BORDER_VISUAL}px solid rgba({ACCENT_RGB},{border_alpha}); }}"
+        )
 
     def resizeEvent(self, event) -> None:  # noqa: N802 (Qt override)
         super().resizeEvent(event)

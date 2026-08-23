@@ -37,3 +37,14 @@ def save_last_theme(theme: str, *, ini_path: str | None = None) -> None:
     settings = _get_settings(ini_path)
     settings.setValue("ui/theme", theme)
     settings.sync()
+
+
+def load_last_always_on_top(default: bool = False, *, ini_path: str | None = None) -> bool:
+    settings = _get_settings(ini_path)
+    return settings.value("ui/always_on_top", default, type=bool)
+
+
+def save_last_always_on_top(always_on_top: bool, *, ini_path: str | None = None) -> None:
+    settings = _get_settings(ini_path)
+    settings.setValue("ui/always_on_top", always_on_top)
+    settings.sync()

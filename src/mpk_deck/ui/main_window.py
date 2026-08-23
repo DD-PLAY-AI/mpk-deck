@@ -2,13 +2,15 @@ import logging
 
 from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
-from PySide6.QtWidgets import QMainWindow, QMenu, QSizeGrip, QSystemTrayIcon, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QMainWindow, QMenu, QSystemTrayIcon, QVBoxLayout, QWidget
 
 from mpk_deck.config import (
     ACCENT_HEX,
     DEFAULT_ACTIONS_PATH,
+    load_last_always_on_top,
     load_last_mode,
     load_last_theme,
+    save_last_always_on_top,
     save_last_mode,
     save_last_theme,
 )
@@ -18,9 +20,7 @@ from mpk_deck.core.handlers import focus_window, launch_program, open_url, set_s
 from mpk_deck.midi.mpk_controller import MPKController
 from mpk_deck.ui.action_config_dialog import ActionConfigDialog
 from mpk_deck.ui.expanded_view import ExpandedView
-from mpk_deck.ui.mini_view import COLS, ROWS, MiniView
-
-MINI_ASPECT = COLS / ROWS
+from mpk_deck.ui.mini_view import MiniView
 
 logger = logging.getLogger(__name__)
 
@@ -85,15 +85,12 @@ class MainWindow(QMainWindow):
         layout.addWidget(self._expanded_view)
         self.setCentralWidget(container)
 
-        self._size_grip = QSizeGrip(container)
-        self._size_grip.setStyleSheet("QSizeGrip { background: rgba(255,255,255,20); border-radius: 4px; }")
-        self._size_grip.setFixedSize(18, 18)
-        self._size_grip.raise_()
-
         self._mode = load_last_mode()
         self._theme = load_last_theme()
+        self._always_on_top = load_last_always_on_top()
         self._apply_mode()
         self._apply_theme()
+        self._apply_always_on_top()
 
         self._tray = self._build_tray()
 
@@ -117,6 +114,13 @@ class MainWindow(QMainWindow):
         self._sync_theme_menu()
 
         menu.addSeparator()
+        always_on_top_action = menu.addAction("Always on Top")
+        always_on_top_action.setCheckable(True)
+        always_on_top_action.setChecked(self._always_on_top)
+        always_on_top_action.triggered.connect(self._toggle_always_on_top)
+        self._always_on_top_action = always_on_top_action
+
+        menu.addSeparator()
         quit_action = menu.addAction("Quit")
         quit_action.triggered.connect(self.close)
 
@@ -132,12 +136,15 @@ class MainWindow(QMainWindow):
     def _apply_mode(self) -> None:
         self._mini_view.setVisible(self._mode == "mini")
         self._expanded_view.setVisible(self._mode == "expanded")
-        self._enforce_mini_aspect()
+        self._enforce_aspect()
 
-    def _enforce_mini_aspect(self) -> None:
-        if self._mode != "mini" or self._resizing_guard:
+    def _enforce_aspect(self) -> None:
+        """Safety net on top of WindowGripMixin's live aspect-locked resize math —
+        catches any drift from window-manager-driven moves (e.g. OS snap)."""
+        if self._resizing_guard:
             return
-        target_h = round(self.width() / MINI_ASPECT)
+        aspect = self._mini_view.locked_aspect if self._mode == "mini" else self._expanded_view.locked_aspect
+        target_h = round(self.width() / aspect)
         if abs(self.height() - target_h) > 1:
             self._resizing_guard = True
             self.resize(self.width(), target_h)
@@ -159,6 +166,22 @@ class MainWindow(QMainWindow):
         self._apply_theme()
         self._sync_theme_menu()
 
+    def _apply_always_on_top(self) -> None:
+        flags = self.windowFlags()
+        if self._always_on_top:
+            flags |= Qt.WindowType.WindowStaysOnTopHint
+        else:
+            flags &= ~Qt.WindowType.WindowStaysOnTopHint
+        was_visible = self.isVisible()
+        self.setWindowFlags(flags)
+        if was_visible:
+            self.show()
+
+    def _toggle_always_on_top(self) -> None:
+        self._always_on_top = not self._always_on_top
+        save_last_always_on_top(self._always_on_top)
+        self._apply_always_on_top()
+
     def _on_control_activated(self, control: str) -> None:
         self._engine.trigger(control)
 
@@ -174,10 +197,7 @@ class MainWindow(QMainWindow):
 
     def resizeEvent(self, event) -> None:  # noqa: N802 (Qt override)
         super().resizeEvent(event)
-        grip_size = self._size_grip.size()
-        self._size_grip.move(self.width() - grip_size.width(), self.height() - grip_size.height())
-        self._size_grip.raise_()
-        self._enforce_mini_aspect()
+        self._enforce_aspect()
 
     def contextMenuEvent(self, event) -> None:  # noqa: N802 (Qt override)
         self._menu.exec(event.globalPos())

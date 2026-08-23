@@ -40,13 +40,78 @@ tool-forced 구조화 출력으로만 호출하고, 절대 자동 실행/저장�
 - UI: `ui/main_window.py`가 통합 지점. `Qt.FramelessWindowHint` +
   `WA_TranslucentBackground`로 타이틀바/닫기버튼 없는 위젯형 창 — 열기/닫기/
   모드전환/테마전환은 시스템 트레이 아이콘 컨텍스트 메뉴로만 (`Toggle
-  Mini/Expanded`, `Light Mode`/`Dark Mode`, `Quit`). 창 이동은 배경(패드
-  사이 여백)을 마우스로 드래그, 리사이즈는 우하단 `QSizeGrip`. Mini 모드는
-  `MINI_ASPECT`(가로:세로 = `COLS`/`ROWS` = 2.0)로 리사이즈 시 비율 고정
-  (`resizeEvent`에서 높이를 폭에 맞춰 재보정, `_resizing_guard`로 재귀
-  방지).
+  Mini/Expanded`, `Light Mode`/`Dark Mode`, `Always on Top`, `Quit`).
+  창 이동/리사이즈는 2026-08-23 두 번 재설계 끝에 순수 Qt 레벨 수동 처리로
+  정착 — 처음 시도했던 Windows 네이티브 `WM_NCHITTEST` 가로채기는 실사용
+  검증에서 테두리도 안 잡히고 커서도 이상하게 나와 실패(PySide6 버전별
+  `nativeEvent` 메시지 마샬링/반환 시그니처가 라이브 확인 없인 검증 불가능한
+  영역이라 판단, `superpowers:systematic-debugging`의 "3번 이상 고쳐도 안
+  되면 아키텍처를 의심하라" 기준에 따라 전면 재설계). 현재 구조:
+  - `ui/hit_test.py`의 `classify_hit()` — 좌표가 테두리(`ui/window_grip.py`의
+    `BORDER=6`px) 안쪽이면 어느 변/코너인지, 그 외 영역은 실제 클릭 가능한
+    위젯(패드 버튼 등) 위인지에 따라 win32 HT* 상수를 반환하는 순수 함수
+    (더 이상 실제 `WM_NCHITTEST`에 넘기지 않음 — 그냥 잘 정의된 zone id로
+    재사용). pytest 커버.
+  - `ui/resize_geometry.py`의 `compute_resized_rect()` — 어느 변/코너를
+    드래그 중인지 + 델타(dx, dy) + 잠글 비율(aspect)을 받아 새
+    (x, y, w, h)를 계산하는 순수 함수. 드래그 반대쪽 변/코너를 앵커로
+    고정하고, E/W/코너는 폭이 델타를 따라가고 높이가 유도되고, N/S는
+    반대로 높이가 델타를 따라가고 폭이 유도됨. pytest 커버(줌/코너별
+    앵커 이동 케이스 전부).
+  - `ui/window_grip.py`의 `WindowGripMixin` — `MiniView`/`ExpandedView`
+    양쪽에 믹스인. `setMouseTracking(True)`로 버튼 안 눌러도
+    `mouseMoveEvent`가 계속 들어오게 해서, 호버 중엔 `classify_hit()`
+    결과에 맞는 커서(`SizeHorCursor`/`SizeVerCursor`/`SizeFDiagCursor`/
+    `SizeBDiagCursor`/`SizeAllCursor`)를 직접 `setCursor()`. 마우스
+    누른 채 이동이면 `mousePressEvent`에서 잡아둔 zone에 따라
+    `compute_resized_rect()`(리사이즈 zone) 또는 단순 오프셋
+    이동(`HTCAPTION`)으로 `self.window()`의 geometry를 직접 갱신 — OS
+    네이티브 API 전혀 안 씀, 전부 우리가 계산.
+  - **커서가 패드 위까지 새던 버그**(`setCursor()`가 자기 커서 없는 자식
+    위젯에 상속되는 Qt 기본 동작 때문)도 이 재설계에서 근본적으로 해결—
+    `PadButton`과 `ExpandedView`의 모든 버튼/키(`QFrame`)에 생성 시점에
+    `Qt.CursorShape.PointingHandCursor`를 명시적으로 지정해서 부모의
+    동적 커서를 상속받지 않게 함.
+  - 이전의 수동 `DraggableMixin`(`ui/window_drag.py`)과 `QSizeGrip`은 둘 다
+    삭제 — 코너 grip 하나뿐이라 리사이즈 지점이 좁고, 종횡비 보정 후 위치가
+    틀어져 화면 밖으로 나가는 버그가 있었음.
+  - 테두리는 시각적으로도 보이게 — 단, 잡는 영역(`BORDER=6`px, 히트테스트용)과
+    실제로 그리는 선 두께는 분리(`frontend-design` 스킬 리뷰 결과: 작은
+    위젯에 6px 통 컬러 테두리는 무겁고 "얇은 테두리" 요청과도 안 맞음).
+    `MiniView`/`ExpandedView` 각자 `BORDER_VISUAL=2`px로 액센트 컬러
+    (`ACCENT_RGB`) 반투명 얇은 엣지 라이트만 그림 — 잡을 수 있는 영역은
+    넓게, 보이는 선은 얇게. `/frontend-design`, `superpowers:brainstorming`
+    두 스킬로 사용자와 함께 요구사항부터 다시 정리한 뒤 진행한 재설계.
+  - **진짜 근본 원인(4번째 시도 후 발견)**: 이 재설계까지 배포했는데도
+    사용자가 "테두리도 안 보이고 이동/리사이즈도 안 됨"을 재차 리포트.
+    3번 이상 같은 기능에서 실패 = `systematic-debugging` Phase 4.5의
+    "아키텍처를 의심하라" 신호라 코드를 더 갈아엎지 않고 먼저 라이브
+    스크린샷으로 확인 → **`MiniView`/`ExpandedView`가 순수 `QWidget`인데
+    `WA_StyledBackground` 속성을 프로젝트 전체에서 단 한 번도 설정한 적이
+    없었음**. Qt에서 이 속성 없이는 `QWidget`의 QSS `background`/`border`가
+    전혀 렌더링되지 않음(자식 `QPushButton`은 자기 스타일을 그리니 안
+    보였을 뿐) — 이번 라운드가 아니라 애초 Phase 1.5 UI 리디자인 때부터
+    있었던 잠재 버그, 이번에 테두리를 실제로 그리려고 하면서 처음
+    표면화됨. `MiniView.__init__`/`ExpandedView.__init__`에
+    `self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)`
+    추가로 해결 — 수정 후 실제 창 스크린샷으로 그라디언트 배경+테두리
+    둘 다 렌더링되는 것 확인. 이동/리사이즈 메커니즘 자체는(이미
+    off-screen `QMouseEvent` 주입으로 검증됨) 손대지 않고, `window_grip.py`에
+    임시 로그를 심어 실제 드래그 입력으로 재검증 — `mousePressEvent`/
+    `mouseMoveEvent`가 정확한 zone으로 계속 발화하고 실제 창 geometry가
+    비율 유지하며 바뀌는 것까지 로그+`list_windows`로 직접 확인(로그는
+    검증 후 원복). 즉 테두리가 안 보였던 것 자체가 "어디를 잡아야 할지
+    몰라서" 이동/리사이즈도 실패로 이어진 것으로 보임 — 메커니즘은
+    처음부터 정상이었을 가능성이 높음.
+  - 비율 고정은 Mini/Expanded 둘 다 항상 적용(사용자 명시적 요청) —
+    `MiniView.ASPECT = COLS/ROWS = 2.0`, `ExpandedView.ASPECT = 312/184`.
+    `MainWindow._enforce_aspect()`가 두 mixin의 `locked_aspect` 값을 읽어
+    사후 보정(`resizeEvent`에서, `_resizing_guard`로 재귀 방지) — 드래그
+    자체는 이미 `compute_resized_rect()`가 실시간으로 비율을 지키므로
+    이건 OS 스냅 등 외부 요인에 대한 안전망.
 - `ui/mini_view.py`: 8패드를 `ui/grid_layout.py`의 `compute_pad_rects()`
-  (정사각형 셀 레터박스 배치, 순수 함수, pytest 커버)로 수동 배치. 패드는
+  (정사각형 셀 레터박스 배치, 순수 함수, pytest 커버)로 수동 배치.
+  `MARGIN=20`, `SPACING=8`. 패드는
   `PadButton`(QPushButton 상속) — 단일클릭은 디바운스(`QApplication.
   doubleClickInterval()`) 후 `activated` 시그널(실제 액션 트리거), 더블클릭은
   타이머를 취소하고 `configure_requested` 시그널(설정 다이얼로그 오픈)을
@@ -67,9 +132,14 @@ tool-forced 구조화 출력으로만 호출하고, 절대 자동 실행/저장�
   아이콘+라벨 리스트(`QListWidget`)로, 오른쪽은 액션별 파라미터 페이지
   (`QStackedWidget`) — launch_program은 설치 프로그램 검색 리스트,
   open_url/focus_window는 텍스트 입력, set_system_volume은 안내 문구만.
-- `config.py`: `DEFAULT_ACTIONS_PATH`, 모드/테마 영속화
+- `config.py`: `DEFAULT_ACTIONS_PATH`, 모드/테마/always-on-top 영속화
   (`load_last_mode`/`save_last_mode`, `load_last_theme`/`save_last_theme`,
-  전부 `QSettings`, 테마 기본값은 `"dark"`).
+  `load_last_always_on_top`/`save_last_always_on_top`, 전부 `QSettings`,
+  테마 기본값은 `"dark"`, always-on-top 기본값은 `False`). Always-on-top은
+  트레이/우클릭 메뉴의 체크 가능한 "Always on Top" 항목에서 토글 —
+  `MainWindow._apply_always_on_top()`이 `Qt.WindowType.WindowStaysOnTopHint`
+  플래그를 set/clear하고, 창이 이미 보이는 상태면 `setWindowFlags` 후
+  `show()`를 다시 호출해야 함(Qt 제약 — 플래그 변경 시 창이 hide됨).
 - `core/nl_action.py`: `parse_nl_action(text, installed_programs, client=None)
   -> Binding | None`. Claude Haiku 4.5를 tool_choice로 강제해 구조화 출력만
   받음 — `launch_program`은 모델이 고른 프로그램 이름이 실제 설치 목록에
@@ -115,15 +185,33 @@ Phase 1 MVP + UI 리디자인 + 자연어 액션 설정까지 `main`에 구현/�
 UI, Action Config Dialog, `core/nl_action.py`). pytest 전체 통과.
 
 미해결/미검증 항목:
-- Windows 창 제어는 `focus_window`만 구현 — move/resize/always-on-top 없음.
+- Windows 창 제어: `focus_window`(다른 앱 대상)는 기존 구현, mpk-deck
+  자체 창의 move/resize/always-on-top(트레이 체크 토글) 모두 구현.
+  로드맵 체크리스트 항목 닫음. 2026-08-23 세 차례 재설계 끝에 순수 Qt
+  수동 처리(`ui/window_grip.py`)로 정착 — 자세한 경위와 이전 두 시도
+  (그립 위치 버그 → 여백 확대 + 커서 → 네이티브 `WM_NCHITTEST`, 셋 다
+  실사용 검증에서 실패)는 위 아키텍처 섹션과 `ROADMAP.md` Decision Log
+  2026-08-23 항목 참고.
+  - `MainWindow`/Qt 위젯은 정책상 pytest 커버 대상이 아니라서, 오프스크린
+    스모크 스크립트로 검증: 실제 `QMouseEvent`를 위젯에 직접 주입해서
+    (1) 패드 위 호버 시 패드 자체 `PointingHandCursor` 유지(부모 커서
+    안 새는지), (2) 코너/변 호버 시 올바른 리사이즈 커서, (3) 배경 갭
+    호버 시 `SizeAllCursor`, (4) 코너 드래그로 실제 창 크기가 비율
+    유지하며 커짐, (5) 배경 드래그로 실제 창 위치가 이동함 — 다섯 개
+    전부 확인. `python -m mpk_deck` 라이브 확인은 아직 사용자 몫(마우스
+    누른 상태로 실제 드래그하는 건 자동화로 안전하게 재현하기 어려움).
 - 반투명 프레임리스 최상위 창은 `QWidget.grab()`/`render()` 자동 캡처가
   안 됨(Qt 캡처 한계, 자식 위젯 단독 캡처는 정상 — 스타일 자체는 검증됨).
   실제 데스크톱 컴포지팅(DWM)에서 어떻게 보이는지는 `python -m mpk_deck`로
   직접 확인 필요 (사용자 몫, 아직 미확인).
 - 자연어 액션 설정 기능은 실제 API 키로 실행 검증 안 됨 — `.env`에
   `ANTHROPIC_API_KEY` 넣고 `python -m mpk_deck`에서 다이얼로그 열어 확인 필요.
-- `ExpandedView`는 이번 라운드 범위 밖 (레이블 잘림 수정만 완료, 테마/
-  더블클릭 분리는 다음 라운드).
+- `ExpandedView`는 여전히 범위 밖: 레이블 잘림 수정만 완료, 테마/더블클릭
+  분리는 물론 리사이즈 시 버튼/UI가 창 크기 비율대로 스케일링되는 것도
+  아직 구현 안 됨(현재는 `_layout_controls()`가 매 리사이즈마다 절대
+  픽셀이 아니라 비율(`0.03*w` 등)로 각 컨트롤을 재배치하긴 하지만, 폰트
+  크기/버튼 최소 크기(`BTN_W`/`BTN_H`=34x16 고정)는 스케일 안 됨 — 진짜
+  비율 스케일링은 다음 UI 라운드에서 자체 브레인스토밍 필요).
 
 다음 라운드(아직 브레인스토밍 전, 코딩 시작하지 말 것): ExpandedView의
 조이스틱을 마우스 드래그로 상하좌우 스크롤 액션에 매핑 + 물리 MPK의 실제

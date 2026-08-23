@@ -13,3 +13,8 @@ bindings:
   action: launch_program
   params:
     path: C:/Program Files (x86)/Kakao/KakaoTalk/KakaoTalk.exe
+- control: pad_7
+  type: trigger
+  action: launch_program
+  params:
+    path: C:\Program Files\Google\Chrome\Application\chrome.exe

@@ -127,7 +127,12 @@ class ExpandedView(WindowGripMixin, QWidget):
 
     def set_dark(self, dark: bool) -> None:
         self._dark = dark
-        bg = "rgba(20,22,28,217)" if dark else f"rgba({ACCENT_RGB},90)"
+        bg = (
+            "rgba(20,22,28,217)"
+            if dark
+            else "qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 rgba(255,255,255,120), "
+            "stop:1 rgba(235,240,255,150))"  # matches MiniView's white glass, not accent-tinted
+        )
         border_alpha = 100 if dark else 130
         self.setStyleSheet(
             f"QWidget#expandedPanel {{ background: {bg}; border-radius: 16px; "

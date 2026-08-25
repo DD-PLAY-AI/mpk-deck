@@ -1,6 +1,6 @@
 import logging
 
-from PySide6.QtCore import QRectF, Qt
+from PySide6.QtCore import QRectF, Qt, QTimer
 from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QMainWindow, QMenu, QSystemTrayIcon, QVBoxLayout, QWidget
 
@@ -20,9 +20,13 @@ from mpk_deck.core.handlers import focus_window, launch_program, open_url, set_s
 from mpk_deck.midi.mpk_controller import MPKController
 from mpk_deck.ui.action_config_dialog import ActionConfigDialog
 from mpk_deck.ui.expanded_view import ExpandedView
+from mpk_deck.ui.midi_status_dot import MidiStatusDot
 from mpk_deck.ui.mini_view import MiniView
 
 logger = logging.getLogger(__name__)
+
+MIDI_POLL_INTERVAL_MS = 3000
+STATUS_DOT_MARGIN = 10
 
 
 def build_action_engine() -> ActionEngine:
@@ -71,6 +75,13 @@ class MainWindow(QMainWindow):
         self._midi = MPKController(self._engine)
         self._midi_detected = self._midi.start()
 
+        self._midi_status_dot = MidiStatusDot(self)
+        self._midi_status_dot.set_connected(self._midi_detected)
+        self._midi_status_dot.retry_requested.connect(self._poll_midi)
+        self._midi_timer = QTimer(self)
+        self._midi_timer.timeout.connect(self._poll_midi)
+        self._midi_timer.start(MIDI_POLL_INTERVAL_MS)
+
         self._mini_view = MiniView()
         self._mini_view.pad_activated.connect(self._on_control_activated)
         self._mini_view.pad_configure_requested.connect(self._on_control_configure_requested)
@@ -93,6 +104,7 @@ class MainWindow(QMainWindow):
         self._apply_always_on_top()
 
         self._tray = self._build_tray()
+        self._position_midi_status_dot()
 
     def _build_tray(self) -> QSystemTrayIcon:
         tray = QSystemTrayIcon(_tray_icon(), self)
@@ -182,6 +194,16 @@ class MainWindow(QMainWindow):
         save_last_always_on_top(self._always_on_top)
         self._apply_always_on_top()
 
+    def _position_midi_status_dot(self) -> None:
+        dot = self._midi_status_dot
+        dot.move(self.width() - dot.width() - STATUS_DOT_MARGIN, self.height() - dot.height() - STATUS_DOT_MARGIN)
+        dot.raise_()
+
+    def _poll_midi(self) -> None:
+        self._midi_detected = self._midi.poll_connection()
+        self._midi_status_dot.set_connected(self._midi_detected)
+        self._tray.setToolTip("Personal Deck" if self._midi_detected else "Personal Deck (MPK not detected)")
+
     def _on_control_activated(self, control: str) -> None:
         self._engine.trigger(control)
 
@@ -198,6 +220,7 @@ class MainWindow(QMainWindow):
     def resizeEvent(self, event) -> None:  # noqa: N802 (Qt override)
         super().resizeEvent(event)
         self._enforce_aspect()
+        self._position_midi_status_dot()
 
     def contextMenuEvent(self, event) -> None:  # noqa: N802 (Qt override)
         self._menu.exec(event.globalPos())

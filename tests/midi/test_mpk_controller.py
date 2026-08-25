@@ -47,3 +47,52 @@ def test_on_message_ignores_unmapped_message():
     controller._on_message(mido.Message("note_off", note=36))
 
     assert calls == []
+
+
+class _FakePort:
+    def __init__(self) -> None:
+        self.closed = False
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def test_poll_connection_connects_when_device_appears(monkeypatch):
+    monkeypatch.setattr(mido, "get_input_names", lambda: ["MPK mini mk II 1"])
+    opened = []
+    monkeypatch.setattr(mido, "open_input", lambda name, callback: opened.append(name) or _FakePort())
+    controller = MPKController(action_engine=ActionEngine())
+
+    assert controller.poll_connection() is True
+    assert opened == ["MPK mini mk II 1"]
+
+
+def test_poll_connection_stays_disconnected_when_device_absent(monkeypatch):
+    monkeypatch.setattr(mido, "get_input_names", lambda: ["Foo"])
+    monkeypatch.setattr(mido, "open_input", lambda name, callback: (_ for _ in ()).throw(AssertionError("should not open")))
+    controller = MPKController(action_engine=ActionEngine())
+
+    assert controller.poll_connection() is False
+
+
+def test_poll_connection_stays_connected_without_reopening(monkeypatch):
+    monkeypatch.setattr(mido, "get_input_names", lambda: ["MPK mini mk II 1"])
+    open_count = []
+    monkeypatch.setattr(mido, "open_input", lambda name, callback: open_count.append(1) or _FakePort())
+    controller = MPKController(action_engine=ActionEngine())
+    controller.poll_connection()
+
+    assert controller.poll_connection() is True
+    assert len(open_count) == 1
+
+
+def test_poll_connection_disconnects_when_device_disappears(monkeypatch):
+    monkeypatch.setattr(mido, "get_input_names", lambda: ["MPK mini mk II 1"])
+    monkeypatch.setattr(mido, "open_input", lambda name, callback: _FakePort())
+    controller = MPKController(action_engine=ActionEngine())
+    controller.poll_connection()
+    port = controller._port
+
+    monkeypatch.setattr(mido, "get_input_names", lambda: [])
+    assert controller.poll_connection() is False
+    assert port.closed is True

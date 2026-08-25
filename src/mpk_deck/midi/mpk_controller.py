@@ -39,6 +39,18 @@ class MPKController:
             self._port.close()
             self._port = None
 
+    def poll_connection(self) -> bool:
+        """Check device presence and open/close the port as needed. Returns the new connected state.
+
+        Cheap: only re-enumerates MIDI input names, doesn't touch the MIDI message stream.
+        Safe to call both from a periodic timer and from a manual "retry" click.
+        """
+        if self._port is not None:
+            if self.find_port_name() is None:
+                self.stop()
+            return self._port is not None
+        return self.start()
+
     def _on_message(self, message: mido.Message) -> None:
         event = translate(message)
         if event is None:

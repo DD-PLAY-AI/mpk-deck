@@ -1,7 +1,9 @@
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QFrame, QLabel, QPushButton, QWidget
 
-from mpk_deck.config import ACCENT_RGB
+from mpk_deck.config import ACCENT_HEX, ACCENT_RGB
+from mpk_deck.ui.keybed import NUM_KEYS, compute_keybed_rects, is_black_key
+from mpk_deck.ui.scaling import compute_scale
 from mpk_deck.ui.window_grip import WindowGripMixin
 
 PAD_LABELS_TOP = ["pad_5", "pad_6", "pad_7", "pad_8"]
@@ -11,6 +13,7 @@ KNOB_LABELS_BOTTOM = ["knob_5", "knob_6", "knob_7", "knob_8"]
 
 ASPECT = 312 / 184
 BORDER_VISUAL = 2  # thin visible edge-light inside the wider (window_grip.BORDER) grab zone
+BASE_WIDTH = 480  # reference width the spec's fixed-px control sizes were measured at
 
 LEFT_BUTTONS = [
     ("arp_on_off", "ON", "Arp On/Off"),
@@ -26,34 +29,78 @@ RIGHT_BUTTONS = [
     ("prog_change", "CHG", "Prog Change"),
     ("prog_select", "SEL", "Prog Select"),
 ]
+GROUPED_RIGHT_BUTTONS = ["bank_ab", "cc", "prog_change"]  # spec: bordered as one group, SEL set apart
 
-BTN_W, BTN_H = 34, 16
-BTN_QSS = "QPushButton { font-size: 7px; padding: 0px; margin: 0px; }"
+BASE_JOYSTICK_D = 40
+BASE_BTN_W, BASE_BTN_H = 34, 16
+BASE_BTN_FONT = 7
+BASE_PAD_FONT = 9
+BASE_KNOB_D = 24
+BASE_KNOB_FONT = 8
+
+# Matches MiniView's palette so both views read as one design system.
+_LIGHT = {
+    "fill": "rgba(255,255,255,140)",
+    "fill_hover": "rgba(255,255,255,190)",
+    "fill_pressed": "rgba(220,225,240,190)",
+    "border": "rgba(120,120,140,90)",
+    "text": "#23242b",
+}
+_DARK = {
+    "fill": "rgba(255,255,255,18)",
+    "fill_hover": "rgba(255,255,255,34)",
+    "fill_pressed": "rgba(255,255,255,10)",
+    "border": "rgba(255,255,255,38)",
+    "text": "#f2f4f8",
+}
+# Keybed colors are theme-tinted but always readable as "black key vs white key",
+# independent of app theme (a piano keybed reads by its own convention, not the app's).
+_KEY_COLORS = {
+    True: {  # dark theme
+        "white": ("#e8e6df", "#33322c"),
+        "black": ("#14161c", f"rgba({ACCENT_RGB},140)"),
+    },
+    False: {  # light theme
+        "white": ("#fbfbfa", "#c9c6bd"),
+        "black": ("#2b2620", f"rgba({ACCENT_RGB},140)"),
+    },
+}
+
+
+def _button_qss(colors: dict[str, str], font_px: float, radius: float) -> str:
+    return (
+        f"QPushButton {{ background: {colors['fill']}; border: 1px solid {colors['border']}; "
+        f"border-radius: {radius:.0f}px; color: {colors['text']}; font-size: {font_px:.0f}px; "
+        f"font-weight: 600; padding: 0px; margin: 0px; }}"
+        f"QPushButton:hover {{ background: {colors['fill_hover']}; }}"
+        f"QPushButton:pressed {{ background: {colors['fill_pressed']}; border: 1px solid {ACCENT_HEX}; }}"
+    )
 
 
 class ExpandedView(WindowGripMixin, QWidget):
     control_clicked = Signal(str)
 
     def __init__(self, dark: bool = False, parent=None) -> None:
-        super().__init__(parent, aspect=ASPECT, min_width=480)
+        super().__init__(parent, aspect=ASPECT, min_width=BASE_WIDTH)
         self.setObjectName("expandedPanel")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setMinimumSize(480, 284)  # keeps the 312:184 aspect ratio roughly intact
+        self.setMinimumSize(BASE_WIDTH, 284)  # keeps the 312:184 aspect ratio roughly intact
+        self._dark = dark
 
         self._joystick = QPushButton("JOY", self)
-        self._joystick.setFixedSize(40, 40)
         self._joystick.setCursor(Qt.CursorShape.PointingHandCursor)
         self._joystick.clicked.connect(lambda: self.control_clicked.emit("joystick"))
 
         self._buttons: dict[str, QPushButton] = {}
         for control, text, tooltip in LEFT_BUTTONS + RIGHT_BUTTONS:
             btn = QPushButton(text, self)
-            btn.setFixedSize(BTN_W, BTN_H)
-            btn.setStyleSheet(BTN_QSS)
             btn.setToolTip(tooltip)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.clicked.connect(lambda _checked=False, c=control: self.control_clicked.emit(c))
             self._buttons[control] = btn
+
+        self._bank_group = QFrame(self)
+        self._bank_group.lower()
 
         self._pads: dict[str, QPushButton] = {}
         for control in PAD_LABELS_TOP + PAD_LABELS_BOTTOM:
@@ -68,24 +115,29 @@ class ExpandedView(WindowGripMixin, QWidget):
             lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self._knobs[control] = lbl
 
-        self._keys: list[QFrame] = []
-        for _ in range(15):
+        # 25 keys (15 white + 10 black), C to C over 2 octaves + 1 — matches the physical keybed.
+        self._keys: dict[int, QFrame] = {}
+        for i in range(NUM_KEYS):
             key = QFrame(self)
-            key.setFrameShape(QFrame.Shape.Box)
             key.setCursor(Qt.CursorShape.PointingHandCursor)
-            key.mousePressEvent = lambda _event, k=len(self._keys): self.control_clicked.emit(f"key_{k}")
-            self._keys.append(key)
+            key.mousePressEvent = lambda _event, k=i: self.control_clicked.emit(f"key_{k}")
+            self._keys[i] = key
 
-        self.set_dark(dark)
-        self._layout_controls()
+        self.set_dark(dark)  # also lays out controls
 
     def set_dark(self, dark: bool) -> None:
+        self._dark = dark
         bg = "rgba(20,22,28,217)" if dark else f"rgba({ACCENT_RGB},90)"
         border_alpha = 100 if dark else 130
         self.setStyleSheet(
             f"QWidget#expandedPanel {{ background: {bg}; border-radius: 16px; "
             f"border: {BORDER_VISUAL}px solid rgba({ACCENT_RGB},{border_alpha}); }}"
         )
+        self._bank_group.setStyleSheet(
+            f"QFrame {{ border: 1px solid rgba({ACCENT_RGB},170); border-radius: 4px; "
+            f"background: rgba({ACCENT_RGB},18); }}"
+        )
+        self._layout_controls()
 
     def resizeEvent(self, event) -> None:  # noqa: N802 (Qt override)
         super().resizeEvent(event)
@@ -93,17 +145,54 @@ class ExpandedView(WindowGripMixin, QWidget):
 
     def _layout_controls(self) -> None:
         w, h = self.width(), self.height()
+        scale = compute_scale(w, base_width=BASE_WIDTH)
+        colors = _DARK if self._dark else _LIGHT
+
+        btn_w, btn_h = round(BASE_BTN_W * scale), round(BASE_BTN_H * scale)
+        btn_font = BASE_BTN_FONT * scale
+        joy_d = round(BASE_JOYSTICK_D * scale)
+        pad_font = BASE_PAD_FONT * scale
+        knob_d = round(BASE_KNOB_D * scale)
+        knob_font = BASE_KNOB_FONT * scale
+
+        joy_qss = (
+            f"QPushButton {{ background: {colors['fill']}; border: 2px solid {ACCENT_HEX}; "
+            f"border-radius: {joy_d // 2}px; color: {colors['text']}; font-size: {btn_font:.0f}px; "
+            f"font-weight: 700; }}"
+            f"QPushButton:hover {{ background: {colors['fill_hover']}; }}"
+            f"QPushButton:pressed {{ background: {colors['fill_pressed']}; }}"
+        )
+        self._joystick.setStyleSheet(joy_qss)
+        self._joystick.setFixedSize(joy_d, joy_d)
+
+        btn_qss = _button_qss(colors, btn_font, radius=4 * scale)
+        for control, btn in self._buttons.items():
+            btn.setStyleSheet(btn_qss)
+            btn.setFixedSize(btn_w, btn_h)
+
+        pad_qss = _button_qss(colors, pad_font, radius=12 * scale)
+        for btn in self._pads.values():
+            btn.setStyleSheet(pad_qss)
+
+        knob_qss = (
+            f"QLabel {{ background: {colors['fill']}; border: 2px solid rgba({ACCENT_RGB},170); "
+            f"border-radius: {knob_d // 2}px; color: {colors['text']}; font-size: {knob_font:.0f}px; "
+            f"font-weight: 700; }}"
+        )
+        for lbl in self._knobs.values():
+            lbl.setStyleSheet(knob_qss)
+            lbl.setFixedSize(knob_d, knob_d)
 
         left_x = int(0.03 * w)
         left_y = int(0.04 * h)
         self._joystick.move(left_x, left_y)
-        row_y = left_y + 40 + 5
+        row_y = left_y + joy_d + 5
         for i in range(0, len(LEFT_BUTTONS), 2):
             a_control = LEFT_BUTTONS[i][0]
             b_control = LEFT_BUTTONS[i + 1][0]
             self._buttons[a_control].move(left_x, row_y)
-            self._buttons[b_control].move(left_x + BTN_W + 4, row_y)
-            row_y += BTN_H + 5
+            self._buttons[b_control].move(left_x + btn_w + 4, row_y)
+            row_y += btn_h + 5
 
         pad_x, pad_y = int(0.18 * w), int(0.02 * h)
         pad_w, pad_h = int(0.42 * w) // 4, int(0.36 * h) // 2
@@ -113,22 +202,46 @@ class ExpandedView(WindowGripMixin, QWidget):
             self._pads[control].setGeometry(pad_x + i * pad_w, pad_y + pad_h, pad_w - 4, pad_h - 4)
 
         knob_x, knob_y = int(0.63 * w), int(0.04 * h)
-        knob_w = int(0.34 * w) // 4
+        knob_cell_w = int(0.34 * w) // 4
         for i, control in enumerate(KNOB_LABELS_TOP):
-            self._knobs[control].setGeometry(knob_x + i * knob_w, knob_y, knob_w - 4, 30)
+            cx = knob_x + i * knob_cell_w + (knob_cell_w - knob_d) // 2
+            self._knobs[control].move(cx, knob_y)
+        knob_row_gap = round(14 * scale)
         for i, control in enumerate(KNOB_LABELS_BOTTOM):
-            self._knobs[control].setGeometry(knob_x + i * knob_w, knob_y + 44, knob_w - 4, 30)
+            cx = knob_x + i * knob_cell_w + (knob_cell_w - knob_d) // 2
+            self._knobs[control].move(cx, knob_y + knob_d + knob_row_gap)
 
         btn_row_x = knob_x + int(0.02 * w)
         btn_row_y = int(0.32 * h)
         bx = btn_row_x
-        for control, _, _ in RIGHT_BUTTONS[:3]:
+        for control in GROUPED_RIGHT_BUTTONS:
             self._buttons[control].move(bx, btn_row_y)
-            bx += BTN_W + 4
+            bx += btn_w + 4
+        group_pad = 3
+        content_right = bx - 4  # bx overshoots by the trailing gap after the last grouped button
+        self._bank_group.setGeometry(
+            btn_row_x - group_pad,
+            btn_row_y - group_pad,
+            content_right - btn_row_x + 2 * group_pad,
+            btn_h + 2 * group_pad,
+        )
         self._buttons["prog_select"].move(bx + 24 - 4, btn_row_y)
 
         key_x, key_y = int(0.015 * w), int(0.44 * h)
-        key_w = int(0.97 * w) // len(self._keys)
+        key_w = int(0.97 * w)
         key_h = int(0.545 * h)
-        for i, key in enumerate(self._keys):
-            key.setGeometry(key_x + i * key_w, key_y, key_w, key_h)
+        white_rects, black_rects = compute_keybed_rects(key_w, key_h)
+        white_semitones = [i for i in range(NUM_KEYS) if not is_black_key(i)]
+        black_semitones = [i for i in range(NUM_KEYS) if is_black_key(i)]
+        white_bg, white_border = _KEY_COLORS[self._dark]["white"]
+        black_bg, black_border = _KEY_COLORS[self._dark]["black"]
+        for semitone, rect in zip(white_semitones, white_rects):
+            key = self._keys[semitone]
+            key.setGeometry(rect.translated(key_x, key_y))
+            key.setStyleSheet(f"QFrame {{ background: {white_bg}; border: 1px solid {white_border}; }}")
+            key.raise_()
+        for semitone, rect in zip(black_semitones, black_rects):
+            key = self._keys[semitone]
+            key.setGeometry(rect.translated(key_x, key_y))
+            key.setStyleSheet(f"QFrame {{ background: {black_bg}; border: 1px solid {black_border}; }}")
+            key.raise_()  # black keys sit visually on top of the white keys they overlap

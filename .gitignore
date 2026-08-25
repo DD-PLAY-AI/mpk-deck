@@ -1,6 +1,11 @@
 # superpowers brainstorming visual companion (local mockups, not source)
 .superpowers/
 
+# Claude Code skills-CLI install artifacts (session tooling, not app source)
+.agents/
+.claude/
+skills-lock.json
+
 # personal reference photo of the physical unit (not for public repo)
 MPK_MINI_MK2.jpg
 

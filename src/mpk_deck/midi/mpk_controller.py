@@ -14,21 +14,23 @@ class MPKController:
         self._port_name_contains = port_name_contains
         self._port = None
 
-    def find_port_name(self) -> str | None:
+    def find_port_name(self, *, log: bool = True) -> str | None:
         try:
             names = mido.get_input_names()
         except Exception:
-            logger.warning("no MIDI backend available")
+            if log:
+                logger.warning("no MIDI backend available")
             return None
         for name in names:
             if self._port_name_contains.lower() in name.lower():
                 return name
         return None
 
-    def start(self) -> bool:
-        name = self.find_port_name()
+    def start(self, *, log: bool = True) -> bool:
+        name = self.find_port_name(log=log)
         if name is None:
-            logger.warning("MPK mini MK2 not found among MIDI inputs")
+            if log:
+                logger.warning("MPK mini MK2 not found among MIDI inputs")
             return False
         self._port = mido.open_input(name, callback=self._on_message)
         logger.info("listening on MIDI port %s", name)
@@ -43,13 +45,14 @@ class MPKController:
         """Check device presence and open/close the port as needed. Returns the new connected state.
 
         Cheap: only re-enumerates MIDI input names, doesn't touch the MIDI message stream.
-        Safe to call both from a periodic timer and from a manual "retry" click.
+        Safe to call both from a periodic timer and from a manual "retry" click. Silent on repeat
+        failure (the caller's connection-status UI is the steady-state indicator, not the log).
         """
         if self._port is not None:
-            if self.find_port_name() is None:
+            if self.find_port_name(log=False) is None:
                 self.stop()
             return self._port is not None
-        return self.start()
+        return self.start(log=False)
 
     def _on_message(self, message: mido.Message) -> None:
         event = translate(message)

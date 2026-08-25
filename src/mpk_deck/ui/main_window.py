@@ -200,7 +200,10 @@ class MainWindow(QMainWindow):
         dot.raise_()
 
     def _poll_midi(self) -> None:
+        was_detected = self._midi_detected
         self._midi_detected = self._midi.poll_connection()
+        if self._midi_detected != was_detected:
+            logger.info("MIDI %s", "connected" if self._midi_detected else "disconnected")
         self._midi_status_dot.set_connected(self._midi_detected)
         self._tray.setToolTip("Personal Deck" if self._midi_detected else "Personal Deck (MPK not detected)")
 

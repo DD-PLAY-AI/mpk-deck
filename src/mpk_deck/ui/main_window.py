@@ -2,7 +2,7 @@ import logging
 
 from PySide6.QtCore import QRectF, Qt, QTimer
 from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
-from PySide6.QtWidgets import QMainWindow, QMenu, QSystemTrayIcon, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QMainWindow, QMenu, QSystemTrayIcon, QVBoxLayout, QWidget
 
 from mpk_deck.config import (
     ACCENT_HEX,
@@ -134,7 +134,7 @@ class MainWindow(QMainWindow):
 
         menu.addSeparator()
         quit_action = menu.addAction("Quit")
-        quit_action.triggered.connect(self.close)
+        quit_action.triggered.connect(self._quit)
 
         self._menu = menu
         tray.setContextMenu(menu)
@@ -231,3 +231,9 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt override)
         self._midi.stop()
         super().closeEvent(event)
+
+    def _quit(self) -> None:
+        """Qt.WindowType.Tool windows don't trigger quitOnLastWindowClosed, so close()
+        alone would hide the window forever without ever ending the process."""
+        self.close()
+        QApplication.instance().quit()

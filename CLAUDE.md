@@ -215,10 +215,20 @@ UI, Action Config Dialog, `core/nl_action.py`). pytest 전체 통과.
 코딩 먼저 시작하지 말 것). 성능(CPU/RAM 최소, busy-wait 금지)은 전부에
 적용되는 공통 제약이지 별도 항목 아님:
 
-1. **A. MIDI 연결 상태 표시등 + 재연결** — Mini/Expanded 둘 다 뱅크 표시
-   옆에 작은 원(연결=초록/미연결=빨강), 미연결일 때 클릭하면 재연결 시도.
-   지금은 시작할 때 포트 한 번만 열고 끝(재연결 없음), 트레이 툴팁 텍스트가
-   유일한 상태 표시. 작고 독립적이라 먼저 — 나중 하드웨어 연동(F)에도 필요.
+1. ~~**A. MIDI 연결 상태 표시등 + 재연결**~~ — **완료, 2026-08-25/26 실기
+   검증까지 끝남.** `MainWindow` 오버레이 위젯(Mini/Expanded 공용) + 초록/
+   빨강 점, 클릭 또는 3초 타이머로 `MPKController.poll_connection()` 호출.
+   실기 검증 중 버그 3개 발견/수정(전부 커밋됨): 미연결 상태에서 폴링마다
+   경고 로그가 반복 출력되던 문제(`06435d5`), ExpandedView 라이트 테마가
+   MiniView와 다른 하늘색 배경이던 문제(`b678faf`), 트레이 Quit이 창만
+   숨기고 프로세스는 안 끝나던 문제 — `MainWindow`가 `Qt.WindowType.Tool`
+   이라 `quitOnLastWindowClosed` 대상에서 제외되는 게 원인, `QApplication.
+   quit()` 직접 호출로 수정(`3060b89`). 부수적으로 `python-rtmidi`(선택
+   익스트라 `midi-hardware`) 설치 완료 — 빌드에 C++ 컴파일러가 필요해서
+   Visual Studio 2022 Build Tools(C++ workload)를 winget으로 설치했고,
+   meson이 MSVC를 찾으려면 `vswhere.exe`가 PATH에 있어야 함(설치 위치:
+   `C:\Program Files (x86)\Microsoft Visual Studio\Installer`). 이제 이
+   환경에서 `mido.get_input_names()`가 실제 장치를 정상적으로 반환함.
 2. **B. Bank/프로필 시스템** — 지금 `actions.yaml` 바인딩 맵 하나뿐인 구조를
    다중 뱅크로 확장. 뱅크 전환은 **새 액션 타입(`switch_bank`)으로 만들어서
    아무 컨트롤(패드/버튼/건반 등)에나 바인딩 가능**하게(건반 전용 아님,

@@ -14,12 +14,20 @@ tool-forced 구조화 출력으로만 호출하고, 절대 자동 실행/저장�
 
 - `core/action_engine.py`의 `ActionEngine`이 유일한 실행 진입점.
   `register_trigger`/`register_continuous`로 액션 이름 -> 핸들러 함수를
-  등록하고, `load_bindings()`로 `control -> Binding(action, params)` 맵을
-  적재한다. MIDI 콜백과 UI 클릭 둘 다 `engine.trigger(control)` /
+  등록하고, `load_banks(banks: dict[str, list[Binding]], switch_bindings:
+  dict[str, str], active_bank: str)`로 뱅크별 바인딩을 적재한다. 생성자에
+  선택적 `on_bank_changed: Callable[[str], None]` 콜백을 받고, `switch_bank
+  (bank_id)` 메서드와 `active_bank` 프로퍼티를 노출. `trigger()`가
+  `switch_bank` 액션을 직접 인식해서 `self.switch_bank(...)`를 호출 —
+  `switch_bank`는 `handlers.py`에 등록되는 일반 핸들러가 아니라 엔진 내재
+  개념. MIDI 콜백과 UI 클릭 둘 다 `engine.trigger(control)` /
   `engine.set_continuous(control, value)`만 호출하고, 직접 실행하지 않는다.
-- `core/action_registry.py`: `config/actions.yaml`을 로드/저장. 잘못된
-  바인딩은 예외를 던지지 않고 로그 후 skip (`ActionConfigError`는 파일
-  자체가 없을 때만).
+- `core/action_registry.py`: `load_config`/`save_config`이 `config/
+  actions.yaml`을 로드/저장하는 `DeckConfig`(`active_bank`,
+  `switch_bindings`, `banks: dict[str, Bank]` — `Bank`는 `name`/`bindings`)
+  기반 API. `load_config`는 절대 예외를 던지지 않음 — 파일 없음, YAML 파싱
+  에러, 구조가 잘못된 경우 모두 단일 뱅크 기본 설정으로 폴백. 잘못된
+  개별 바인딩은 로그 후 skip. `ActionConfigError`는 더 이상 없음.
 - `core/handlers.py`: 실제 side-effect 핸들러 (`launch_program`,
   `open_url`, `focus_window`, `set_system_volume`). 트리거 핸들러는
   `(params: dict) -> None`, continuous 핸들러는
@@ -34,9 +42,9 @@ tool-forced 구조화 출력으로만 호출하고, 절대 자동 실행/저장�
   `ControlEvent`)로 변환 -> `ActionEngine.trigger`/`set_continuous` 호출.
   팩토리 기본 매핑: 패드 note 36-43 -> `pad_1`..`pad_8`, 노브 CC 1-8 ->
   `knob_1`..`knob_8`.
-- `config/actions.yaml`이 바인딩의 source of truth. 손으로 수정하거나
-  `ui/action_config_dialog.py`의 GUI로 수정 — 둘 다 같은
-  `load_bindings`/`save_bindings`를 거친다.
+- `config/actions.yaml`이 바인딩의 source of truth, 뱅크 인식 구조로
+  확장됨. 손으로 수정하거나 `ui/action_config_dialog.py`의 GUI로 수정 —
+  둘 다 같은 `load_config`/`save_config`를 거친다.
 - UI: `ui/main_window.py`가 통합 지점. `Qt.FramelessWindowHint` +
   `WA_TranslucentBackground`로 타이틀바/닫기버튼 없는 위젯형 창 — 열기/닫기/
   모드전환/테마전환은 시스템 트레이 아이콘 컨텍스트 메뉴로만 (`Toggle
@@ -132,6 +140,12 @@ tool-forced 구조화 출력으로만 호출하고, 절대 자동 실행/저장�
   아이콘+라벨 리스트(`QListWidget`)로, 오른쪽은 액션별 파라미터 페이지
   (`QStackedWidget`) — launch_program은 설치 프로그램 검색 리스트,
   open_url/focus_window는 텍스트 입력, set_system_volume은 안내 문구만.
+  "Add Bank" 액션을 선택하면 그 컨트롤을 `switch_bank`에 영구 고정 —
+  이후 그 컨트롤을 다시 열면 다른 액션 항목이 전부 비활성화되고 뱅크
+  이름만 수정 가능.
+- `ui/bank_indicator.py`의 `BankIndicator` — 활성 뱅크 이름을 표시,
+  `ui/midi_status_dot.py`의 `MidiStatusDot`과 같은 `MainWindow` 오버레이
+  위젯 패턴.
 - `config.py`: `DEFAULT_ACTIONS_PATH`, 모드/테마/always-on-top 영속화
   (`load_last_mode`/`save_last_mode`, `load_last_theme`/`save_last_theme`,
   `load_last_always_on_top`/`save_last_always_on_top`, 전부 `QSettings`,

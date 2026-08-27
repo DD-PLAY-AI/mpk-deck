@@ -113,6 +113,41 @@ def test_load_config_parses_new_format(tmp_path):
     ]
 
 
+def test_load_config_non_mapping_top_level_returns_default_seed(tmp_path):
+    path = tmp_path / "actions.yaml"
+    path.write_text("- just\n- a\n- list\n")
+    config = load_config(path)
+    assert config.active_bank == DEFAULT_BANK_ID
+
+
+def test_load_config_bank_entry_not_a_mapping_returns_default_seed(tmp_path):
+    path = tmp_path / "actions.yaml"
+    path.write_text("banks:\n  bank_a: not_a_mapping\n")
+    config = load_config(path)
+    assert config.active_bank == DEFAULT_BANK_ID
+
+
+def test_load_config_switch_bindings_not_a_mapping_returns_default_seed(tmp_path):
+    path = tmp_path / "actions.yaml"
+    path.write_text("banks:\n  bank_a:\n    name: Home\n    bindings: []\nswitch_bindings:\n  - a\n  - b\n")
+    config = load_config(path)
+    assert config.active_bank == DEFAULT_BANK_ID
+
+
+def test_load_config_null_banks_seeds_default_bank(tmp_path):
+    path = tmp_path / "actions.yaml"
+    path.write_text("banks:\nactive_bank: bank_a\n")
+    config = load_config(path)
+    assert config.banks == {DEFAULT_BANK_ID: Bank(name=DEFAULT_BANK_NAME, bindings=[])}
+
+
+def test_load_config_active_bank_not_in_banks_falls_back(tmp_path):
+    path = tmp_path / "actions.yaml"
+    path.write_text("active_bank: ghost\nbanks:\n  bank_a:\n    name: Home\n    bindings: []\n")
+    config = load_config(path)
+    assert config.active_bank == "bank_a"
+
+
 def test_save_then_load_round_trips_new_format(tmp_path):
     path = tmp_path / "actions.yaml"
     config = DeckConfig(

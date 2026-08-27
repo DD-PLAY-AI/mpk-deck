@@ -77,16 +77,16 @@ def load_config(path: str | Path) -> DeckConfig:
         logger.warning("failed to parse %s, starting with defaults", path)
         return _default_config()
 
+    if not isinstance(data, dict):
+        logger.warning("%s did not contain a mapping at the top level, starting with defaults", path)
+        return _default_config()
+
     if "banks" in data:
-        banks = {}
-        for bank_id, bank_data in (data.get("banks") or {}).items():
-            raw_bindings = bank_data.get("bindings", []) or []
-            banks[bank_id] = Bank(name=bank_data.get("name", bank_id), bindings=_parse_bindings_list(raw_bindings))
-        return DeckConfig(
-            active_bank=data.get("active_bank") or DEFAULT_BANK_ID,
-            switch_bindings=dict(data.get("switch_bindings") or {}),
-            banks=banks,
-        )
+        try:
+            return _parse_new_format(data)
+        except (AttributeError, TypeError, ValueError) as exc:
+            logger.warning("failed to parse bank data in %s (%s), starting with defaults", path, exc)
+            return _default_config()
 
     # old flat format (or an empty/near-empty file) -> migrate
     raw_bindings = data.get("bindings", []) or []
@@ -96,6 +96,20 @@ def load_config(path: str | Path) -> DeckConfig:
         switch_bindings={DEFAULT_SWITCH_CONTROL: DEFAULT_BANK_ID},
         banks={DEFAULT_BANK_ID: Bank(name=DEFAULT_BANK_NAME, bindings=bindings)},
     )
+
+
+def _parse_new_format(data: dict) -> DeckConfig:
+    banks = {}
+    for bank_id, bank_data in (data.get("banks") or {}).items():
+        raw_bindings = bank_data.get("bindings", []) or []
+        banks[bank_id] = Bank(name=bank_data.get("name", bank_id), bindings=_parse_bindings_list(raw_bindings))
+    if not banks:
+        banks = {DEFAULT_BANK_ID: Bank(name=DEFAULT_BANK_NAME, bindings=[])}
+    switch_bindings = dict(data.get("switch_bindings") or {})
+    active_bank = data.get("active_bank") or DEFAULT_BANK_ID
+    if active_bank not in banks:
+        active_bank = next(iter(banks))
+    return DeckConfig(active_bank=active_bank, switch_bindings=switch_bindings, banks=banks)
 
 
 def save_config(path: str | Path, config: DeckConfig) -> None:

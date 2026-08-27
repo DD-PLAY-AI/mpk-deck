@@ -220,9 +220,13 @@ class MainWindow(QMainWindow):
         self._engine.trigger(control)
 
     def _on_bank_changed(self, bank_id: str) -> None:
+        QTimer.singleShot(0, lambda: self._apply_bank_change(bank_id))
+
+    def _apply_bank_change(self, bank_id: str) -> None:
         self._bindings = dict(self._engine.bindings)
         self._mini_view.update_bindings(self._bindings)
         self._bank_indicator.set_bank_name(self._bank_names.get(bank_id, bank_id))
+        self._position_overlay_widgets()
         self._config.active_bank = bank_id
         save_config(DEFAULT_ACTIONS_PATH, self._config)
 
@@ -231,25 +235,30 @@ class MainWindow(QMainWindow):
         dialog = ActionConfigDialog(control, existing, parent=self, bank_names=self._bank_names)
         if not dialog.exec():
             return
+        if control in self._config.switch_bindings:
+            self._save_bank_binding(control, dialog.result_bank_name())
+            return
         binding = dialog.result_binding()
         if binding.action == "switch_bank":
-            self._save_bank_binding(control, existing, dialog.result_bank_name())
+            self._save_bank_binding(control, dialog.result_bank_name())
         else:
             self._save_normal_binding(control, binding)
 
-    def _save_bank_binding(self, control: str, existing: Binding | None, bank_name: str) -> None:
-        is_new = existing is None or existing.action != "switch_bank"
-        if is_new:
+    def _save_bank_binding(self, control: str, bank_name: str) -> None:
+        bank_name = bank_name or "New Bank"
+        if control in self._config.switch_bindings:
+            bank_id = self._config.switch_bindings[control]
+            self._config.banks[bank_id].name = bank_name
+        else:
             bank_id = generate_bank_id(bank_name, self._config.banks.keys())
             self._config.banks[bank_id] = Bank(name=bank_name, bindings=[])
             self._config.switch_bindings[control] = bank_id
-        else:
-            bank_id = existing.params["bank_id"]
-            self._config.banks[bank_id].name = bank_name
         self._bank_names[bank_id] = bank_name
         binding = Binding(control=control, type="trigger", action="switch_bank", params={"bank_id": bank_id})
         self._bindings[control] = binding
         self._sync_after_binding_change()
+        if bank_id == self._engine.active_bank:
+            self._bank_indicator.set_bank_name(bank_name)
 
     def _save_normal_binding(self, control: str, binding: Binding) -> None:
         active_id = self._engine.active_bank
@@ -264,6 +273,7 @@ class MainWindow(QMainWindow):
             self._config.switch_bindings,
             self._engine.active_bank,
         )
+        self._bindings = dict(self._engine.bindings)
         save_config(DEFAULT_ACTIONS_PATH, self._config)
         self._mini_view.update_bindings(self._bindings)
 

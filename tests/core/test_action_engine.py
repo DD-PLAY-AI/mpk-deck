@@ -110,6 +110,21 @@ def test_switch_bank_to_same_bank_is_a_noop():
     assert calls == []
 
 
+def test_switch_binding_overrides_bank_binding_on_same_control():
+    engine = ActionEngine()
+    engine.load_banks(
+        {
+            "bank_a": [Binding(control="key_0", type="trigger", action="a", params={})],
+            "bank_b": [],
+        },
+        switch_bindings={"key_0": "bank_b"},
+        active_bank="bank_a",
+    )
+    binding = engine.bindings["key_0"]
+    assert binding.action == "switch_bank"
+    assert binding.params == {"bank_id": "bank_b"}
+
+
 def test_switch_bank_to_unknown_bank_is_ignored():
     calls = []
     engine = ActionEngine(on_bank_changed=calls.append)

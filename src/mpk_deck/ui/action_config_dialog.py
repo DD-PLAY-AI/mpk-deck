@@ -255,6 +255,8 @@ class ActionConfigDialog(QDialog):
             item = self._action_list.item(i)
             if item.data(Qt.ItemDataRole.UserRole) != "switch_bank":
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
+        self._nl_edit.setEnabled(False)
+        self._nl_generate_btn.setEnabled(False)
 
     def _on_generate_clicked(self) -> None:
         text = self._nl_edit.text()
@@ -280,7 +282,7 @@ class ActionConfigDialog(QDialog):
 
     def result_binding(self) -> Binding:
         action = self._current_action()
-        if action == "switch_bank":
+        if self._locked or action == "switch_bank":
             # The real bank_id is assigned by the caller (new bank, or the existing
             # locked control's target) - this dialog only ever supplies the name.
             return Binding(control=self._control, type="trigger", action="switch_bank", params={})

@@ -1,5 +1,14 @@
-import pytest
-from mpk_deck.core.action_registry import Binding, load_bindings, save_bindings, ActionConfigError, generate_bank_id
+from mpk_deck.core.action_registry import (
+    Bank,
+    Binding,
+    DeckConfig,
+    DEFAULT_BANK_ID,
+    DEFAULT_BANK_NAME,
+    DEFAULT_SWITCH_CONTROL,
+    generate_bank_id,
+    load_config,
+    save_config,
+)
 
 
 def test_generate_bank_id_slugifies_name():
@@ -19,22 +28,46 @@ def test_generate_bank_id_blank_name_falls_back_to_bank():
     assert generate_bank_id("   ", existing_ids=[]) == "bank"
 
 
-def test_load_bindings_parses_valid_yaml(tmp_path):
+def test_load_config_missing_file_returns_default_seed(tmp_path):
+    config = load_config(tmp_path / "nope.yaml")
+    assert config.active_bank == DEFAULT_BANK_ID
+    assert config.switch_bindings == {DEFAULT_SWITCH_CONTROL: DEFAULT_BANK_ID}
+    assert config.banks == {DEFAULT_BANK_ID: Bank(name=DEFAULT_BANK_NAME, bindings=[])}
+
+
+def test_load_config_empty_file_returns_default_seed(tmp_path):
+    path = tmp_path / "actions.yaml"
+    path.write_text("")
+    config = load_config(path)
+    assert config.banks[DEFAULT_BANK_ID].name == DEFAULT_BANK_NAME
+
+
+def test_load_config_malformed_yaml_returns_default_seed(tmp_path):
+    path = tmp_path / "actions.yaml"
+    path.write_text("banks: [this is not: valid: yaml: at all")
+    config = load_config(path)
+    assert config.active_bank == DEFAULT_BANK_ID
+
+
+def test_load_config_migrates_old_flat_format(tmp_path):
     path = tmp_path / "actions.yaml"
     path.write_text(
         "bindings:\n"
         "  - control: pad_1\n"
         "    type: trigger\n"
         "    action: launch_program\n"
-        "    params: { path: \"C:/x.exe\" }\n"
+        '    params: { path: "C:/x.exe" }\n'
     )
-    result = load_bindings(path)
-    assert result == [
+    config = load_config(path)
+    assert config.active_bank == DEFAULT_BANK_ID
+    assert config.switch_bindings == {DEFAULT_SWITCH_CONTROL: DEFAULT_BANK_ID}
+    assert config.banks[DEFAULT_BANK_ID].name == DEFAULT_BANK_NAME
+    assert config.banks[DEFAULT_BANK_ID].bindings == [
         Binding(control="pad_1", type="trigger", action="launch_program", params={"path": "C:/x.exe"})
     ]
 
 
-def test_load_bindings_skips_invalid_entry_and_keeps_valid_ones(tmp_path):
+def test_load_config_migration_skips_invalid_entry(tmp_path):
     path = tmp_path / "actions.yaml"
     path.write_text(
         "bindings:\n"
@@ -44,29 +77,56 @@ def test_load_bindings_skips_invalid_entry_and_keeps_valid_ones(tmp_path):
         "  - control: pad_2\n"
         "    type: trigger\n"
         "    action: open_url\n"
-        "    params: { url: \"https://example.com\" }\n"
+        '    params: { url: "https://example.com" }\n'
     )
-    result = load_bindings(path)
-    assert len(result) == 1
-    assert result[0].control == "pad_2"
+    config = load_config(path)
+    bindings = config.banks[DEFAULT_BANK_ID].bindings
+    assert len(bindings) == 1
+    assert bindings[0].control == "pad_2"
 
 
-def test_load_bindings_missing_file_raises(tmp_path):
-    with pytest.raises(ActionConfigError):
-        load_bindings(tmp_path / "nope.yaml")
-
-
-def test_load_bindings_empty_file_returns_empty_list(tmp_path):
+def test_load_config_parses_new_format(tmp_path):
     path = tmp_path / "actions.yaml"
-    path.write_text("")
-    assert load_bindings(path) == []
-
-
-def test_save_then_load_round_trips(tmp_path):
-    path = tmp_path / "actions.yaml"
-    bindings = [
-        Binding(control="pad_1", type="trigger", action="launch_program", params={"path": "C:/x.exe"}),
-        Binding(control="knob_1", type="continuous", action="set_system_volume", params={}),
+    path.write_text(
+        "active_bank: bank_b\n"
+        "switch_bindings:\n"
+        "  key_0: bank_a\n"
+        "banks:\n"
+        "  bank_a:\n"
+        "    name: Home\n"
+        "    bindings: []\n"
+        "  bank_b:\n"
+        "    name: Trading\n"
+        "    bindings:\n"
+        "      - control: pad_1\n"
+        "        type: trigger\n"
+        "        action: open_url\n"
+        '        params: { url: "https://example.com" }\n'
+    )
+    config = load_config(path)
+    assert config.active_bank == "bank_b"
+    assert config.switch_bindings == {"key_0": "bank_a"}
+    assert config.banks["bank_a"] == Bank(name="Home", bindings=[])
+    assert config.banks["bank_b"].name == "Trading"
+    assert config.banks["bank_b"].bindings == [
+        Binding(control="pad_1", type="trigger", action="open_url", params={"url": "https://example.com"})
     ]
-    save_bindings(path, bindings)
-    assert load_bindings(path) == bindings
+
+
+def test_save_then_load_round_trips_new_format(tmp_path):
+    path = tmp_path / "actions.yaml"
+    config = DeckConfig(
+        active_bank="bank_b",
+        switch_bindings={"key_0": "bank_a"},
+        banks={
+            "bank_a": Bank(name="Home", bindings=[]),
+            "bank_b": Bank(
+                name="Trading",
+                bindings=[
+                    Binding(control="pad_1", type="trigger", action="open_url", params={"url": "https://x.com"})
+                ],
+            ),
+        },
+    )
+    save_config(path, config)
+    assert load_config(path) == config

@@ -48,17 +48,7 @@ def generate_bank_id(name: str, existing_ids: Iterable[str]) -> str:
     return candidate
 
 
-class ActionConfigError(Exception):
-    pass
-
-
-def load_bindings(path: str | Path) -> list[Binding]:
-    path = Path(path)
-    if not path.exists():
-        raise ActionConfigError(f"actions file not found: {path}")
-    with path.open("r", encoding="utf-8") as f:
-        data = yaml.safe_load(f) or {}
-    raw_bindings = data.get("bindings", []) or []
+def _parse_bindings_list(raw_bindings: list) -> list[Binding]:
     bindings: list[Binding] = []
     for i, entry in enumerate(raw_bindings):
         try:
@@ -68,9 +58,56 @@ def load_bindings(path: str | Path) -> list[Binding]:
     return bindings
 
 
-def save_bindings(path: str | Path, bindings: list[Binding]) -> None:
+def _default_config() -> DeckConfig:
+    return DeckConfig(
+        active_bank=DEFAULT_BANK_ID,
+        switch_bindings={DEFAULT_SWITCH_CONTROL: DEFAULT_BANK_ID},
+        banks={DEFAULT_BANK_ID: Bank(name=DEFAULT_BANK_NAME, bindings=[])},
+    )
+
+
+def load_config(path: str | Path) -> DeckConfig:
     path = Path(path)
-    data = {"bindings": [asdict(b) for b in bindings]}
+    if not path.exists():
+        return _default_config()
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+    except yaml.YAMLError:
+        logger.warning("failed to parse %s, starting with defaults", path)
+        return _default_config()
+
+    if "banks" in data:
+        banks = {}
+        for bank_id, bank_data in (data.get("banks") or {}).items():
+            raw_bindings = bank_data.get("bindings", []) or []
+            banks[bank_id] = Bank(name=bank_data.get("name", bank_id), bindings=_parse_bindings_list(raw_bindings))
+        return DeckConfig(
+            active_bank=data.get("active_bank") or DEFAULT_BANK_ID,
+            switch_bindings=dict(data.get("switch_bindings") or {}),
+            banks=banks,
+        )
+
+    # old flat format (or an empty/near-empty file) -> migrate
+    raw_bindings = data.get("bindings", []) or []
+    bindings = _parse_bindings_list(raw_bindings)
+    return DeckConfig(
+        active_bank=DEFAULT_BANK_ID,
+        switch_bindings={DEFAULT_SWITCH_CONTROL: DEFAULT_BANK_ID},
+        banks={DEFAULT_BANK_ID: Bank(name=DEFAULT_BANK_NAME, bindings=bindings)},
+    )
+
+
+def save_config(path: str | Path, config: DeckConfig) -> None:
+    path = Path(path)
+    data = {
+        "active_bank": config.active_bank,
+        "switch_bindings": config.switch_bindings,
+        "banks": {
+            bank_id: {"name": bank.name, "bindings": [asdict(b) for b in bank.bindings]}
+            for bank_id, bank in config.banks.items()
+        },
+    }
     with path.open("w", encoding="utf-8") as f:
         yaml.safe_dump(data, f, sort_keys=False)
 

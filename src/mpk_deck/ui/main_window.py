@@ -15,10 +15,11 @@ from mpk_deck.config import (
     save_last_theme,
 )
 from mpk_deck.core.action_engine import ActionEngine
-from mpk_deck.core.action_registry import Binding, load_bindings, save_bindings
+from mpk_deck.core.action_registry import Bank, Binding, DeckConfig, generate_bank_id, load_config, save_config
 from mpk_deck.core.handlers import focus_window, launch_program, open_url, set_system_volume
 from mpk_deck.midi.mpk_controller import MPKController
 from mpk_deck.ui.action_config_dialog import ActionConfigDialog
+from mpk_deck.ui.bank_indicator import BankIndicator
 from mpk_deck.ui.expanded_view import ExpandedView
 from mpk_deck.ui.midi_status_dot import MidiStatusDot
 from mpk_deck.ui.mini_view import MiniView
@@ -29,18 +30,17 @@ MIDI_POLL_INTERVAL_MS = 3000
 STATUS_DOT_MARGIN = 10
 
 
-def build_action_engine() -> ActionEngine:
-    engine = ActionEngine()
+def build_action_engine(config: DeckConfig, on_bank_changed) -> ActionEngine:
+    engine = ActionEngine(on_bank_changed=on_bank_changed)
     engine.register_trigger("launch_program", launch_program)
     engine.register_trigger("open_url", open_url)
     engine.register_trigger("focus_window", focus_window)
     engine.register_continuous("set_system_volume", set_system_volume)
-    try:
-        bindings = load_bindings(DEFAULT_ACTIONS_PATH)
-    except Exception:
-        logger.exception("failed to load %s, starting with no bindings", DEFAULT_ACTIONS_PATH)
-        bindings = []
-    engine.load_bindings(bindings)
+    engine.load_banks(
+        {bank_id: bank.bindings for bank_id, bank in config.banks.items()},
+        config.switch_bindings,
+        config.active_bank,
+    )
     return engine
 
 
@@ -68,7 +68,9 @@ class MainWindow(QMainWindow):
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
-        self._engine = build_action_engine()
+        self._config = load_config(DEFAULT_ACTIONS_PATH)
+        self._bank_names: dict[str, str] = {bank_id: bank.name for bank_id, bank in self._config.banks.items()}
+        self._engine = build_action_engine(self._config, self._on_bank_changed)
         self._bindings: dict[str, Binding] = dict(self._engine.bindings)
         self._resizing_guard = False
 
@@ -81,6 +83,9 @@ class MainWindow(QMainWindow):
         self._midi_timer = QTimer(self)
         self._midi_timer.timeout.connect(self._poll_midi)
         self._midi_timer.start(MIDI_POLL_INTERVAL_MS)
+
+        self._bank_indicator = BankIndicator(self)
+        self._bank_indicator.set_bank_name(self._bank_names.get(self._engine.active_bank, self._engine.active_bank))
 
         self._mini_view = MiniView()
         self._mini_view.pad_activated.connect(self._on_control_activated)
@@ -104,7 +109,7 @@ class MainWindow(QMainWindow):
         self._apply_always_on_top()
 
         self._tray = self._build_tray()
-        self._position_midi_status_dot()
+        self._position_overlay_widgets()
 
     def _build_tray(self) -> QSystemTrayIcon:
         tray = QSystemTrayIcon(_tray_icon(), self)
@@ -166,6 +171,7 @@ class MainWindow(QMainWindow):
         dark = self._theme == "dark"
         self._mini_view.set_dark(dark)
         self._expanded_view.set_dark(dark)
+        self._bank_indicator.set_dark(dark)
 
     def _toggle_mode(self) -> None:
         self._mode = "expanded" if self._mode == "mini" else "mini"
@@ -194,10 +200,13 @@ class MainWindow(QMainWindow):
         save_last_always_on_top(self._always_on_top)
         self._apply_always_on_top()
 
-    def _position_midi_status_dot(self) -> None:
+    def _position_overlay_widgets(self) -> None:
         dot = self._midi_status_dot
         dot.move(self.width() - dot.width() - STATUS_DOT_MARGIN, self.height() - dot.height() - STATUS_DOT_MARGIN)
         dot.raise_()
+        indicator = self._bank_indicator
+        indicator.move(dot.x() - indicator.width() - STATUS_DOT_MARGIN, dot.y() + (dot.height() - indicator.height()) // 2)
+        indicator.raise_()
 
     def _poll_midi(self) -> None:
         was_detected = self._midi_detected
@@ -210,20 +219,58 @@ class MainWindow(QMainWindow):
     def _on_control_activated(self, control: str) -> None:
         self._engine.trigger(control)
 
+    def _on_bank_changed(self, bank_id: str) -> None:
+        self._bindings = dict(self._engine.bindings)
+        self._mini_view.update_bindings(self._bindings)
+        self._bank_indicator.set_bank_name(self._bank_names.get(bank_id, bank_id))
+        self._config.active_bank = bank_id
+        save_config(DEFAULT_ACTIONS_PATH, self._config)
+
     def _on_control_configure_requested(self, control: str) -> None:
         existing = self._bindings.get(control)
-        dialog = ActionConfigDialog(control, existing, parent=self)
-        if dialog.exec():
-            binding = dialog.result_binding()
-            self._bindings[control] = binding
-            self._engine.load_bindings(list(self._bindings.values()))
-            save_bindings(DEFAULT_ACTIONS_PATH, list(self._bindings.values()))
-            self._mini_view.update_bindings(self._bindings)
+        dialog = ActionConfigDialog(control, existing, parent=self, bank_names=self._bank_names)
+        if not dialog.exec():
+            return
+        binding = dialog.result_binding()
+        if binding.action == "switch_bank":
+            self._save_bank_binding(control, existing, dialog.result_bank_name())
+        else:
+            self._save_normal_binding(control, binding)
+
+    def _save_bank_binding(self, control: str, existing: Binding | None, bank_name: str) -> None:
+        is_new = existing is None or existing.action != "switch_bank"
+        if is_new:
+            bank_id = generate_bank_id(bank_name, self._config.banks.keys())
+            self._config.banks[bank_id] = Bank(name=bank_name, bindings=[])
+            self._config.switch_bindings[control] = bank_id
+        else:
+            bank_id = existing.params["bank_id"]
+            self._config.banks[bank_id].name = bank_name
+        self._bank_names[bank_id] = bank_name
+        binding = Binding(control=control, type="trigger", action="switch_bank", params={"bank_id": bank_id})
+        self._bindings[control] = binding
+        self._sync_after_binding_change()
+
+    def _save_normal_binding(self, control: str, binding: Binding) -> None:
+        active_id = self._engine.active_bank
+        bank = self._config.banks[active_id]
+        bank.bindings = [b for b in bank.bindings if b.control != control] + [binding]
+        self._bindings[control] = binding
+        self._sync_after_binding_change()
+
+    def _sync_after_binding_change(self) -> None:
+        self._engine.load_banks(
+            {bank_id: bank.bindings for bank_id, bank in self._config.banks.items()},
+            self._config.switch_bindings,
+            self._engine.active_bank,
+        )
+        save_config(DEFAULT_ACTIONS_PATH, self._config)
+        self._mini_view.update_bindings(self._bindings)
 
     def resizeEvent(self, event) -> None:  # noqa: N802 (Qt override)
         super().resizeEvent(event)
         self._enforce_aspect()
-        self._position_midi_status_dot()
+        self._position_overlay_widgets()
 
     def contextMenuEvent(self, event) -> None:  # noqa: N802 (Qt override)
         self._menu.exec(event.globalPos())

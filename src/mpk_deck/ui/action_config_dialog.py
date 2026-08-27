@@ -24,6 +24,7 @@ ACTION_CHOICES = [
     ("open_url", "\U0001f310", "Open URL"),
     ("focus_window", "\U0001fa9f", "Focus Window"),
     ("set_system_volume", "\U0001f50a", "System Volume"),
+    ("switch_bank", "➕", "Add Bank"),
 ]
 ACTION_GLYPHS = {name: glyph for name, glyph, _ in ACTION_CHOICES}
 ACTION_LABELS = {name: label for name, _, label in ACTION_CHOICES}
@@ -32,12 +33,14 @@ ACTION_TYPE = {
     "open_url": "trigger",
     "focus_window": "trigger",
     "set_system_volume": "continuous",
+    "switch_bank": "trigger",
 }
 PARAM_KEY = {
     "launch_program": "path",
     "open_url": "url",
     "focus_window": "title_contains",
     "set_system_volume": None,
+    "switch_bank": None,
 }
 
 DIALOG_QSS = f"""
@@ -79,12 +82,20 @@ QPushButton#primary:hover {{ background: #4b7bf5; }}
 
 
 class ActionConfigDialog(QDialog):
-    def __init__(self, control: str, existing: Binding | None = None, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        control: str,
+        existing: Binding | None = None,
+        parent: QWidget | None = None,
+        bank_names: dict[str, str] | None = None,
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle(f"Configure {control}")
         self.setMinimumSize(480, 320)
         self.setStyleSheet(DIALOG_QSS)
         self._control = control
+        self._bank_names = bank_names or {}
+        self._locked = existing is not None and existing.action == "switch_bank"
 
         heading = QLabel(f"Configure {control}")
         heading.setObjectName("heading")
@@ -102,6 +113,7 @@ class ActionConfigDialog(QDialog):
         self._url_edit = self._build_line_edit_page("https://example.com")
         self._title_edit = self._build_line_edit_page("Window title contains...")
         self._volume_page = self._build_volume_page()
+        self._bank_name_edit = self._build_bank_name_page()
 
         body = QHBoxLayout()
         body.addWidget(self._action_list)
@@ -138,6 +150,8 @@ class ActionConfigDialog(QDialog):
             self._apply_binding(existing)
         else:
             self._select_action(ACTION_CHOICES[0][0])
+        if self._locked:
+            self._lock_to_switch_bank()
 
     def _build_program_picker_page(self) -> QLineEdit:
         page = QWidget(self)
@@ -204,6 +218,17 @@ class ActionConfigDialog(QDialog):
         self._param_stack.addWidget(page)
         return page
 
+    def _build_bank_name_page(self) -> QLineEdit:
+        page = QWidget(self)
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        edit = QLineEdit(page)
+        edit.setPlaceholderText("Bank name")
+        layout.addWidget(edit)
+        layout.addStretch(1)
+        self._param_stack.addWidget(page)
+        return edit
+
     def _param_edit_for(self, action: str) -> QLineEdit | None:
         return {"launch_program": self._path_edit, "open_url": self._url_edit, "focus_window": self._title_edit}.get(
             action
@@ -215,11 +240,21 @@ class ActionConfigDialog(QDialog):
 
     def _apply_binding(self, binding: Binding) -> None:
         self._select_action(binding.action)
+        if binding.action == "switch_bank":
+            bank_id = binding.params.get("bank_id", "")
+            self._bank_name_edit.setText(self._bank_names.get(bank_id, ""))
+            return
         key = PARAM_KEY.get(binding.action)
         if key:
             edit = self._param_edit_for(binding.action)
             if edit:
                 edit.setText(str(binding.params.get(key, "")))
+
+    def _lock_to_switch_bank(self) -> None:
+        for i in range(self._action_list.count()):
+            item = self._action_list.item(i)
+            if item.data(Qt.ItemDataRole.UserRole) != "switch_bank":
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
 
     def _on_generate_clicked(self) -> None:
         text = self._nl_edit.text()
@@ -245,7 +280,14 @@ class ActionConfigDialog(QDialog):
 
     def result_binding(self) -> Binding:
         action = self._current_action()
+        if action == "switch_bank":
+            # The real bank_id is assigned by the caller (new bank, or the existing
+            # locked control's target) - this dialog only ever supplies the name.
+            return Binding(control=self._control, type="trigger", action="switch_bank", params={})
         key = PARAM_KEY.get(action)
         edit = self._param_edit_for(action)
         params = {key: edit.text()} if key and edit else {}
         return Binding(control=self._control, type=ACTION_TYPE[action], action=action, params=params)
+
+    def result_bank_name(self) -> str:
+        return self._bank_name_edit.text().strip()

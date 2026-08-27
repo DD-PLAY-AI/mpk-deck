@@ -2,7 +2,7 @@ import logging
 import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Literal
+from typing import Iterable, Literal
 
 import yaml
 
@@ -37,7 +37,7 @@ class DeckConfig:
     banks: dict[str, Bank]
 
 
-def generate_bank_id(name: str, existing_ids) -> str:
+def generate_bank_id(name: str, existing_ids: Iterable[str]) -> str:
     slug = re.sub(r"[^a-z0-9]+", "_", name.strip().lower()).strip("_") or "bank"
     existing = set(existing_ids)
     candidate = slug

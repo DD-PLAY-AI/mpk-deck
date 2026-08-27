@@ -1,4 +1,5 @@
 import logging
+import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -16,6 +17,35 @@ class Binding:
     type: BindingType
     action: str
     params: dict = field(default_factory=dict)
+
+
+DEFAULT_BANK_ID = "bank_a"
+DEFAULT_BANK_NAME = "Home"
+DEFAULT_SWITCH_CONTROL = "key_0"
+
+
+@dataclass
+class Bank:
+    name: str
+    bindings: list[Binding] = field(default_factory=list)
+
+
+@dataclass
+class DeckConfig:
+    active_bank: str
+    switch_bindings: dict[str, str]
+    banks: dict[str, Bank]
+
+
+def generate_bank_id(name: str, existing_ids) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "_", name.strip().lower()).strip("_") or "bank"
+    existing = set(existing_ids)
+    candidate = slug
+    n = 2
+    while candidate in existing:
+        candidate = f"{slug}_{n}"
+        n += 1
+    return candidate
 
 
 class ActionConfigError(Exception):

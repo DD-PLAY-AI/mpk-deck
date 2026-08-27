@@ -1,5 +1,22 @@
 import pytest
-from mpk_deck.core.action_registry import Binding, load_bindings, save_bindings, ActionConfigError
+from mpk_deck.core.action_registry import Binding, load_bindings, save_bindings, ActionConfigError, generate_bank_id
+
+
+def test_generate_bank_id_slugifies_name():
+    assert generate_bank_id("Trading", existing_ids=[]) == "trading"
+
+
+def test_generate_bank_id_replaces_non_alnum_with_underscore():
+    assert generate_bank_id("My Cool Bank!", existing_ids=[]) == "my_cool_bank"
+
+
+def test_generate_bank_id_dedupes_on_collision():
+    assert generate_bank_id("Trading", existing_ids=["trading"]) == "trading_2"
+    assert generate_bank_id("Trading", existing_ids=["trading", "trading_2"]) == "trading_3"
+
+
+def test_generate_bank_id_blank_name_falls_back_to_bank():
+    assert generate_bank_id("   ", existing_ids=[]) == "bank"
 
 
 def test_load_bindings_parses_valid_yaml(tmp_path):

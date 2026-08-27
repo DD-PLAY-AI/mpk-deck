@@ -229,13 +229,26 @@ UI, Action Config Dialog, `core/nl_action.py`). pytest 전체 통과.
    meson이 MSVC를 찾으려면 `vswhere.exe`가 PATH에 있어야 함(설치 위치:
    `C:\Program Files (x86)\Microsoft Visual Studio\Installer`). 이제 이
    환경에서 `mido.get_input_names()`가 실제 장치를 정상적으로 반환함.
-2. **B. Bank/프로필 시스템** — 지금 `actions.yaml` 바인딩 맵 하나뿐인 구조를
-   다중 뱅크로 확장. 뱅크 전환은 **새 액션 타입(`switch_bank`)으로 만들어서
-   아무 컨트롤(패드/버튼/건반 등)에나 바인딩 가능**하게(건반 전용 아님,
-   2026-08-25 사용자 확정). 뱅크 이름 사용자 설정 가능, Mini/Expanded 둘 다
-   같은 활성 뱅크의 바인딩을 보여줘야 함(동기화), Mini 쪽에는 우측 하단쯤에
-   뱅크 표시. 다른 서브프로젝트들이 다 이 구조 위에 올라가므로 A 다음
-   최우선.
+2. ~~**B. Bank/프로필 시스템**~~ — **완료, 2026-08-27.** `config/actions.yaml`
+   스키마를 `active_bank`/`switch_bindings`/`banks`(뱅크별 `name`+`bindings`)
+   구조로 확장 — 기존 flat `bindings:` 포맷 파일은 `load_config`가 자동
+   마이그레이션(파일 자체는 다음 저장 때까지 안 건드림). 뱅크 전환은 전역
+   `switch_bindings`(컨트롤→뱅크id, 아무 컨트롤에나 바인딩 가능, 2026-08-25
+   확정)로 구현 — `ActionEngine.trigger()`가 `switch_bank` 액션을 만나면
+   등록된 핸들러 대신 엔진 자체 `switch_bank()`를 직접 호출(엔진 내재
+   개념, `handlers.py`에 없음). `ActionConfigDialog`에 "Add Bank" 액션
+   추가 — 선택하면 이름만 입력받아 그 자리에서 뱅크 생성+해당 컨트롤을
+   `switch_bindings`에 고정 등록, 이후 그 컨트롤은 다른 액션으로 재할당
+   불가(액션 리스트에서 다른 항목 전부 비활성화, 뱅크 이름만 수정 가능).
+   신규 `ui/bank_indicator.py`(`BankIndicator`) — `MidiStatusDot`과 같은
+   `MainWindow` 오버레이 패턴, MIDI 상태 점 옆에 배치, Mini/Expanded 자동
+   동일 표시, 라이트/다크 테마 색 전환. `subagent-driven-development`로
+   6개 태스크 실행(스펙: `docs/superpowers/specs/2026-08-27-bank-profile-
+   system-design.md`, 계획: `docs/superpowers/plans/2026-08-27-bank-
+   profile-system.md`), 107/107 테스트 통과. **GUI 상호작용 부분(Add
+   Bank 플로우 실제 클릭, 잠금 확인, 뱅크 표시 실시간 갱신, 재시작 후
+   유지)은 서브에이전트가 마우스/스크린샷 도구가 없어서 검증 못 함 —
+   사용자 라이브 확인 필요.**
 3. **C. 조이스틱 기본 스크롤 + UI 실제 움직임** — 조이스틱을 기본으로
    가로/세로 스크롤 액션에 매핑, ExpandedView 조이스틱이 실제 밀리는 것처럼
    시각적으로도 움직이게.

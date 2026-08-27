@@ -1,8 +1,9 @@
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QFrame, QLabel, QPushButton, QWidget
+from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtWidgets import QApplication, QFrame, QLabel, QPushButton, QWidget
 
 from mpk_deck.config import ACCENT_HEX, ACCENT_RGB
 from mpk_deck.ui.keybed import NUM_KEYS, compute_keybed_rects, is_black_key
+from mpk_deck.ui.mini_view import PadButton
 from mpk_deck.ui.scaling import compute_scale
 from mpk_deck.ui.window_grip import WindowGripMixin
 
@@ -67,6 +68,34 @@ _KEY_COLORS = {
 }
 
 
+class _DebouncedKey(QFrame):
+    """A keybed key: single click activates (debounced), double click configures.
+
+    QFrame has no QAbstractButton `clicked` signal to build on, so this mirrors
+    PadButton's (mini_view.py) timer-based debounce directly on the raw mouse events.
+    """
+
+    activated = Signal()
+    configure_requested = Signal()
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._click_timer = QTimer(self)
+        self._click_timer.setSingleShot(True)
+        self._click_timer.timeout.connect(self.activated.emit)
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._click_timer.start(QApplication.doubleClickInterval())
+        super().mousePressEvent(event)
+
+    def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        self._click_timer.stop()
+        self.configure_requested.emit()
+        super().mouseDoubleClickEvent(event)
+
+
 def _button_qss(colors: dict[str, str], font_px: float, radius: float) -> str:
     return (
         f"QPushButton {{ background: {colors['fill']}; border: 1px solid {colors['border']}; "
@@ -78,7 +107,8 @@ def _button_qss(colors: dict[str, str], font_px: float, radius: float) -> str:
 
 
 class ExpandedView(WindowGripMixin, QWidget):
-    control_clicked = Signal(str)
+    control_activated = Signal(str)
+    control_configure_requested = Signal(str)
 
     def __init__(self, dark: bool = False, parent=None) -> None:
         super().__init__(parent, aspect=ASPECT, min_width=BASE_WIDTH)
@@ -87,26 +117,26 @@ class ExpandedView(WindowGripMixin, QWidget):
         self.setMinimumSize(BASE_WIDTH, 284)  # keeps the 312:184 aspect ratio roughly intact
         self._dark = dark
 
-        self._joystick = QPushButton("JOY", self)
-        self._joystick.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._joystick.clicked.connect(lambda: self.control_clicked.emit("joystick"))
+        self._joystick = PadButton("JOY", self)
+        self._joystick.activated.connect(lambda: self.control_activated.emit("joystick"))
+        self._joystick.configure_requested.connect(lambda: self.control_configure_requested.emit("joystick"))
 
-        self._buttons: dict[str, QPushButton] = {}
+        self._buttons: dict[str, PadButton] = {}
         for control, text, tooltip in LEFT_BUTTONS + RIGHT_BUTTONS:
-            btn = QPushButton(text, self)
+            btn = PadButton(text, self)
             btn.setToolTip(tooltip)
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.clicked.connect(lambda _checked=False, c=control: self.control_clicked.emit(c))
+            btn.activated.connect(lambda c=control: self.control_activated.emit(c))
+            btn.configure_requested.connect(lambda c=control: self.control_configure_requested.emit(c))
             self._buttons[control] = btn
 
         self._bank_group = QFrame(self)
         self._bank_group.lower()
 
-        self._pads: dict[str, QPushButton] = {}
+        self._pads: dict[str, PadButton] = {}
         for control in PAD_LABELS_TOP + PAD_LABELS_BOTTOM:
-            btn = QPushButton(control.upper(), self)
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.clicked.connect(lambda _checked=False, c=control: self.control_clicked.emit(c))
+            btn = PadButton(control.upper(), self)
+            btn.activated.connect(lambda c=control: self.control_activated.emit(c))
+            btn.configure_requested.connect(lambda c=control: self.control_configure_requested.emit(c))
             self._pads[control] = btn
 
         self._knobs: dict[str, QLabel] = {}
@@ -116,11 +146,11 @@ class ExpandedView(WindowGripMixin, QWidget):
             self._knobs[control] = lbl
 
         # 25 keys (15 white + 10 black), C to C over 2 octaves + 1 — matches the physical keybed.
-        self._keys: dict[int, QFrame] = {}
+        self._keys: dict[int, _DebouncedKey] = {}
         for i in range(NUM_KEYS):
-            key = QFrame(self)
-            key.setCursor(Qt.CursorShape.PointingHandCursor)
-            key.mousePressEvent = lambda _event, k=i: self.control_clicked.emit(f"key_{k}")
+            key = _DebouncedKey(self)
+            key.activated.connect(lambda k=i: self.control_activated.emit(f"key_{k}"))
+            key.configure_requested.connect(lambda k=i: self.control_configure_requested.emit(f"key_{k}"))
             self._keys[i] = key
 
         self.set_dark(dark)  # also lays out controls

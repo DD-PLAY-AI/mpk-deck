@@ -92,7 +92,8 @@ class MainWindow(QMainWindow):
         self._mini_view.pad_configure_requested.connect(self._on_control_configure_requested)
         self._mini_view.update_bindings(self._bindings)
         self._expanded_view = ExpandedView()
-        self._expanded_view.control_clicked.connect(self._on_control_configure_requested)
+        self._expanded_view.control_activated.connect(self._on_control_activated)
+        self._expanded_view.control_configure_requested.connect(self._on_control_configure_requested)
 
         container = QWidget(self)
         layout = QVBoxLayout(container)

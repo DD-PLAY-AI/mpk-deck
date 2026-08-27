@@ -1,20 +1,34 @@
-bindings:
-- control: pad_1
-  type: trigger
-  action: launch_program
-  params:
-    path: C:/Windows/System32/notepad.exe
-- control: knob_1
-  type: continuous
-  action: set_system_volume
-  params: {}
-- control: pad_6
-  type: trigger
-  action: launch_program
-  params:
-    path: C:/Program Files (x86)/Kakao/KakaoTalk/KakaoTalk.exe
-- control: pad_7
-  type: trigger
-  action: launch_program
-  params:
-    path: C:\Program Files\Google\Chrome\Application\chrome.exe
+active_bank: ai_2
+switch_bindings:
+  key_0: bank_a
+  key_2: ai
+  pad_4: ai_2
+banks:
+  bank_a:
+    name: Home
+    bindings:
+    - control: pad_1
+      type: trigger
+      action: launch_program
+      params:
+        path: C:/Windows/System32/notepad.exe
+    - control: knob_1
+      type: continuous
+      action: set_system_volume
+      params: {}
+    - control: pad_6
+      type: trigger
+      action: launch_program
+      params:
+        path: C:/Program Files (x86)/Kakao/KakaoTalk/KakaoTalk.exe
+    - control: pad_7
+      type: trigger
+      action: launch_program
+      params:
+        path: C:\Program Files\Google\Chrome\Application\chrome.exe
+  ai:
+    name: AI
+    bindings: []
+  ai_2:
+    name: AI
+    bindings: []

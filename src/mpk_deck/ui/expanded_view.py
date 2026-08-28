@@ -1,9 +1,12 @@
-from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtWidgets import QApplication, QFrame, QLabel, QMenu, QPushButton, QWidget
+from PySide6.QtCore import QPointF, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QFont, QPainter, QPen
+from PySide6.QtWidgets import QApplication, QFrame, QMenu, QPushButton, QWidget
 
 from mpk_deck.config import ACCENT_HEX, ACCENT_RGB
+from mpk_deck.ui.accent import hex_to_rgb_str, mix
 from mpk_deck.ui.joystick_geometry import clamp_deflection
 from mpk_deck.ui.keybed import NUM_KEYS, compute_keybed_rects, is_black_key
+from mpk_deck.ui.knob_geometry import needle_angle
 from mpk_deck.ui.mini_view import PadButton
 from mpk_deck.ui.scaling import compute_scale
 from mpk_deck.ui.window_grip import WindowGripMixin
@@ -57,6 +60,9 @@ _DARK = {
 }
 # Keybed colors are theme-tinted but always readable as "black key vs white key",
 # independent of app theme (a piano keybed reads by its own convention, not the app's).
+# Deliberately NOT accent-selectable - wired to the literal config.ACCENT_RGB constant,
+# unaffected by the user's chosen accent (see docs/superpowers/specs/2026-08-29-
+# design-preferences.md's Out of scope section).
 _KEY_COLORS = {
     True: {  # dark theme
         "white": ("#e8e6df", "#33322c"),
@@ -110,8 +116,10 @@ class JoystickWidget(QFrame):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self._handle = QFrame(self)
+        self._handle.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self._x = 0.0
         self._y = 0.0
 
@@ -120,13 +128,20 @@ class JoystickWidget(QFrame):
         self._y = max(-1.0, min(1.0, y))
         self._reposition_handle()
 
-    def apply_style(self, colors: dict[str, str], diameter: int) -> None:
+    def apply_style(self, colors: dict[str, str], accent_hex: str, diameter: int) -> None:
         self.setFixedSize(diameter, diameter)
         self.setStyleSheet(
-            f"QFrame {{ background: {colors['fill']}; border: 2px solid {ACCENT_HEX}; "
-            f"border-radius: {diameter // 2}px; }}"
+            f"QFrame {{ background: qradialgradient(cx:0.35, cy:0.3, radius:0.75, fx:0.35, fy:0.3, "
+            f"stop:0 {colors['fill_hover']}, stop:1 {colors['fill']}); "
+            f"border: 2px solid {accent_hex}; border-radius: {diameter // 2}px; }}"
         )
-        self._handle.setStyleSheet(f"QFrame {{ background: {ACCENT_HEX}; border-radius: 999px; }}")
+        hi = mix(accent_hex, (255, 255, 255), 0.45)
+        lo = mix(accent_hex, (0, 0, 0), 0.55)
+        self._handle.setStyleSheet(
+            f"QFrame {{ background: qradialgradient(cx:0.32, cy:0.28, radius:0.85, fx:0.32, fy:0.28, "
+            f"stop:0 {hi}, stop:0.55 {accent_hex}, stop:1 {lo}); "
+            f"border: 1px solid rgba(0,0,0,80); border-radius: 999px; }}"
+        )
         self._reposition_handle()
 
     def resizeEvent(self, event) -> None:  # noqa: N802 (Qt override)
@@ -173,13 +188,89 @@ class JoystickWidget(QFrame):
         super().mouseDoubleClickEvent(event)
 
 
-def _button_qss(colors: dict[str, str], font_px: float, radius: float) -> str:
+class KnobWidget(QFrame):
+    """Shows a knob's real-time value as a rotating indicator, in one of two
+    selectable styles (see set_style):
+
+    - "A": keeps the control's number centered, and orbits a small dot just
+      outside the disc's rim, positioned by the current value.
+    - "B": drops the number, draws a full needle from the disc's center toward
+      the rim, positioned by the current value.
+
+    Both use the same sweep (ui/knob_geometry.py's needle_angle): value 0.0 ->
+    7 o'clock, value 1.0 -> 5 o'clock, clockwise through 12."""
+
+    def __init__(self, label: str, parent=None) -> None:
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self._label = label
+        self._value = 0.0
+        self._style = "A"
+        self._colors = _DARK
+        self._accent_hex = ACCENT_HEX
+
+    def set_value(self, value: float) -> None:
+        self._value = max(0.0, min(1.0, value))
+        self.update()
+
+    def apply_style(
+        self, colors: dict[str, str], accent_hex: str, diameter: int, font_px: float, style: str
+    ) -> None:
+        self._colors = colors
+        self._accent_hex = accent_hex
+        self._style = style
+        self.setFixedSize(diameter, diameter)
+        font = self.font()
+        font.setPixelSize(max(1, round(font_px)))
+        font.setWeight(QFont.Weight.Bold)  # matches the old QLabel knob styling's font-weight: 700
+        self.setFont(font)
+        accent_rgb = hex_to_rgb_str(accent_hex)
+        self.setStyleSheet(
+            f"QFrame {{ background: qradialgradient(cx:0.35, cy:0.3, radius:0.75, fx:0.35, fy:0.3, "
+            f"stop:0 {colors['fill_hover']}, stop:1 {colors['fill']}); "
+            f"border: 2px solid rgba({accent_rgb},170); border-radius: {diameter // 2}px; }}"
+        )
+        self.update()
+
+    def paintEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        d = self.width()
+        r = d / 2
+        accent = QColor(self._accent_hex)
+
+        if self._style == "A":
+            painter.setPen(QColor(self._colors["text"]))
+            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self._label)
+            painter.save()
+            painter.translate(QPointF(r, r))
+            painter.rotate(needle_angle(self._value))
+            painter.setBrush(accent)
+            painter.setPen(Qt.PenStyle.NoPen)
+            tick_r = max(1.0, d * 0.06)
+            painter.drawEllipse(QPointF(0, -(r + 3)), tick_r, tick_r)
+            painter.restore()
+        else:
+            painter.save()
+            painter.translate(QPointF(r, r))
+            painter.rotate(needle_angle(self._value))
+            pen = QPen(accent)
+            pen.setWidthF(max(2.0, d * 0.05))
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            painter.setPen(pen)
+            painter.drawLine(QPointF(0, -0.15 * r), QPointF(0, -0.85 * r))
+            painter.restore()
+        painter.end()
+
+
+def _button_qss(colors: dict[str, str], font_px: float, radius: float, accent_hex: str) -> str:
     return (
         f"QPushButton {{ background: {colors['fill']}; border: 1px solid {colors['border']}; "
         f"border-radius: {radius:.0f}px; color: {colors['text']}; font-size: {font_px:.0f}px; "
         f"font-weight: 600; padding: 0px; margin: 0px; }}"
         f"QPushButton:hover {{ background: {colors['fill_hover']}; }}"
-        f"QPushButton:pressed {{ background: {colors['fill_pressed']}; border: 1px solid {ACCENT_HEX}; }}"
+        f"QPushButton:pressed {{ background: {colors['fill_pressed']}; border: 1px solid {accent_hex}; }}"
     )
 
 
@@ -193,6 +284,8 @@ class ExpandedView(WindowGripMixin, QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setMinimumSize(BASE_WIDTH, 284)  # keeps the 312:184 aspect ratio roughly intact
         self._dark = dark
+        self._accent_hex = ACCENT_HEX
+        self._knob_style = "A"
 
         self._joystick = JoystickWidget(self)
         self._joystick.axis_configure_requested.connect(self.control_configure_requested.emit)
@@ -215,11 +308,9 @@ class ExpandedView(WindowGripMixin, QWidget):
             btn.configure_requested.connect(lambda c=control: self.control_configure_requested.emit(c))
             self._pads[control] = btn
 
-        self._knobs: dict[str, QLabel] = {}
+        self._knobs: dict[str, KnobWidget] = {}
         for control in KNOB_LABELS_TOP + KNOB_LABELS_BOTTOM:
-            lbl = QLabel(control.split("_")[1].upper(), self)
-            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            self._knobs[control] = lbl
+            self._knobs[control] = KnobWidget(control.split("_")[1].upper(), self)
 
         # 25 keys (15 white + 10 black), C to C over 2 octaves + 1 — matches the physical keybed.
         self._keys: dict[int, _DebouncedKey] = {}
@@ -240,18 +331,34 @@ class ExpandedView(WindowGripMixin, QWidget):
             "stop:1 rgba(235,240,255,150))"  # matches MiniView's white glass, not accent-tinted
         )
         border_alpha = 100 if dark else 130
+        accent_rgb = hex_to_rgb_str(self._accent_hex)
         self.setStyleSheet(
             f"QWidget#expandedPanel {{ background: {bg}; border-radius: 16px; "
-            f"border: {BORDER_VISUAL}px solid rgba({ACCENT_RGB},{border_alpha}); }}"
+            f"border: {BORDER_VISUAL}px solid rgba({accent_rgb},{border_alpha}); }}"
         )
         self._bank_group.setStyleSheet(
-            f"QFrame {{ border: 1px solid rgba({ACCENT_RGB},170); border-radius: 4px; "
-            f"background: rgba({ACCENT_RGB},18); }}"
+            f"QFrame {{ border: 1px solid rgba({accent_rgb},170); border-radius: 4px; "
+            f"background: rgba({accent_rgb},18); }}"
         )
+        self._layout_controls()
+
+    def set_accent(self, accent_hex: str) -> None:
+        self._accent_hex = accent_hex
+        for btn in list(self._buttons.values()) + list(self._pads.values()):
+            btn.set_accent(accent_hex)
+        self.set_dark(self._dark)  # re-derives panel/bank-group border color, and re-layouts
+
+    def set_knob_style(self, style: str) -> None:
+        self._knob_style = style
         self._layout_controls()
 
     def set_joystick_deflection(self, x: float, y: float) -> None:
         self._joystick.set_deflection(x, y)
+
+    def set_knob_value(self, control: str, value: float) -> None:
+        knob = self._knobs.get(control)
+        if knob is not None:
+            knob.set_value(value)
 
     def resizeEvent(self, event) -> None:  # noqa: N802 (Qt override)
         super().resizeEvent(event)
@@ -269,25 +376,19 @@ class ExpandedView(WindowGripMixin, QWidget):
         knob_d = round(BASE_KNOB_D * scale)
         knob_font = BASE_KNOB_FONT * scale
 
-        self._joystick.apply_style(colors, joy_d)
+        self._joystick.apply_style(colors, self._accent_hex, joy_d)
 
-        btn_qss = _button_qss(colors, btn_font, radius=4 * scale)
+        btn_qss = _button_qss(colors, btn_font, radius=4 * scale, accent_hex=self._accent_hex)
         for control, btn in self._buttons.items():
             btn.setStyleSheet(btn_qss)
             btn.setFixedSize(btn_w, btn_h)
 
-        pad_qss = _button_qss(colors, pad_font, radius=12 * scale)
+        pad_qss = _button_qss(colors, pad_font, radius=12 * scale, accent_hex=self._accent_hex)
         for btn in self._pads.values():
             btn.setStyleSheet(pad_qss)
 
-        knob_qss = (
-            f"QLabel {{ background: {colors['fill']}; border: 2px solid rgba({ACCENT_RGB},170); "
-            f"border-radius: {knob_d // 2}px; color: {colors['text']}; font-size: {knob_font:.0f}px; "
-            f"font-weight: 700; }}"
-        )
-        for lbl in self._knobs.values():
-            lbl.setStyleSheet(knob_qss)
-            lbl.setFixedSize(knob_d, knob_d)
+        for knob in self._knobs.values():
+            knob.apply_style(colors, self._accent_hex, knob_d, knob_font, self._knob_style)
 
         left_x = int(0.03 * w)
         left_y = int(0.04 * h)

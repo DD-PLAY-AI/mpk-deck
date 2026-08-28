@@ -84,3 +84,40 @@ def _default_volume_setter(value: float) -> None:
     interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
     volume = cast(interface, POINTER(IAudioEndpointVolume))
     volume.SetMasterVolumeLevelScalar(value, None)
+
+
+def scroll_horizontal(params: dict, value: float, *, sender=None) -> None:
+    """`value` in [-1.0, 1.0]: joystick X deflection, 0 = centered/no scroll.
+    `params["sensitivity"]` (float, default 1.0) scales the notch count."""
+    send = sender or _default_scroll_sender
+    ticks = _scroll_notches(value, params.get("sensitivity", 1.0))
+    if ticks:
+        send(horizontal=True, notches=ticks)
+
+
+def scroll_vertical(params: dict, value: float, *, sender=None) -> None:
+    """Same as scroll_horizontal but for the vertical wheel."""
+    send = sender or _default_scroll_sender
+    ticks = _scroll_notches(value, params.get("sensitivity", 1.0))
+    if ticks:
+        send(horizontal=False, notches=ticks)
+
+
+def _scroll_notches(value: float, sensitivity: float, *, max_notches: int = 3) -> int:
+    """Pure: deflection + sensitivity -> whole wheel notches for one call. Linear in
+    |value| so a light push scrolls slowly and a full push scrolls fast; sign gives
+    direction."""
+    return round(max(-1.0, min(1.0, value)) * sensitivity * max_notches)
+
+
+def _default_scroll_sender(*, horizontal: bool, notches: int) -> None:
+    """Real SendInput-class wheel injection - the OS treats it like a physical mouse
+    wheel, unlike a PostMessage (which many apps, especially Chrome/Electron, ignore).
+    Lands on whatever window the OS cursor is actually over - in real use that's
+    always the app the user is working in, since mouse-drag on the on-screen joystick
+    never calls this (see docs/superpowers/specs/2026-08-28-joystick-scroll-design.md)."""
+    import win32api
+    import win32con
+
+    flag = win32con.MOUSEEVENTF_HWHEEL if horizontal else win32con.MOUSEEVENTF_WHEEL
+    win32api.mouse_event(flag, 0, 0, notches * 120, 0)  # WHEEL_DELTA = 120 per notch

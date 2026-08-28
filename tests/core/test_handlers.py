@@ -57,3 +57,46 @@ def test_set_system_volume_passes_through_valid_value():
     calls = []
     handlers.set_system_volume({}, 0.42, volume_setter=calls.append)
     assert calls == [0.42]
+
+
+def test_scroll_notches_scales_linearly_with_sensitivity():
+    assert handlers._scroll_notches(1.0, 1.0) == 3
+    assert handlers._scroll_notches(1.0, 2.0) == 6
+
+
+def test_scroll_notches_negative_value_gives_negative_notches():
+    assert handlers._scroll_notches(-1.0, 1.0) == -3
+
+
+def test_scroll_notches_small_deflection_gives_fewer_notches():
+    assert handlers._scroll_notches(0.1, 1.0) == 0
+    assert handlers._scroll_notches(0.5, 1.0) == round(0.5 * 3)
+
+
+def test_scroll_notches_clamps_out_of_range_value():
+    assert handlers._scroll_notches(5.0, 1.0) == 3
+    assert handlers._scroll_notches(-5.0, 1.0) == -3
+
+
+def test_scroll_horizontal_calls_sender_with_horizontal_true():
+    calls = []
+    handlers.scroll_horizontal({"sensitivity": 1.0}, 1.0, sender=lambda **kw: calls.append(kw))
+    assert calls == [{"horizontal": True, "notches": 3}]
+
+
+def test_scroll_vertical_calls_sender_with_horizontal_false():
+    calls = []
+    handlers.scroll_vertical({"sensitivity": 1.0}, -1.0, sender=lambda **kw: calls.append(kw))
+    assert calls == [{"horizontal": False, "notches": -3}]
+
+
+def test_scroll_horizontal_zero_deflection_does_not_call_sender():
+    calls = []
+    handlers.scroll_horizontal({"sensitivity": 1.0}, 0.0, sender=lambda **kw: calls.append(kw))
+    assert calls == []
+
+
+def test_scroll_horizontal_missing_sensitivity_defaults_to_one():
+    calls = []
+    handlers.scroll_horizontal({}, 1.0, sender=lambda **kw: calls.append(kw))
+    assert calls == [{"horizontal": True, "notches": 3}]

@@ -33,9 +33,9 @@ def test_on_message_sets_continuous_for_knob():
     engine.set_continuous = lambda control, value: calls.append((control, value))
     controller = MPKController(action_engine=engine)
 
-    controller._on_message(mido.Message("control_change", control=1, value=64))
+    controller._on_message(mido.Message("control_change", control=2, value=64))
 
-    assert calls == [("knob_1", 64 / 127.0)]
+    assert calls == [("knob_2", 64 / 127.0)]
 
 
 def test_on_message_ignores_unmapped_message():

@@ -24,6 +24,8 @@ ACTION_CHOICES = [
     ("open_url", "\U0001f310", "Open URL"),
     ("focus_window", "\U0001fa9f", "Focus Window"),
     ("set_system_volume", "\U0001f50a", "System Volume"),
+    ("scroll_horizontal", "↔", "Scroll Horizontal"),
+    ("scroll_vertical", "↕", "Scroll Vertical"),
     ("switch_bank", "➕", "Add Bank"),
 ]
 ACTION_GLYPHS = {name: glyph for name, glyph, _ in ACTION_CHOICES}
@@ -33,6 +35,8 @@ ACTION_TYPE = {
     "open_url": "trigger",
     "focus_window": "trigger",
     "set_system_volume": "continuous",
+    "scroll_horizontal": "continuous",
+    "scroll_vertical": "continuous",
     "switch_bank": "trigger",
 }
 PARAM_KEY = {
@@ -40,6 +44,8 @@ PARAM_KEY = {
     "open_url": "url",
     "focus_window": "title_contains",
     "set_system_volume": None,
+    "scroll_horizontal": None,
+    "scroll_vertical": None,
     "switch_bank": None,
 }
 
@@ -114,6 +120,7 @@ class ActionConfigDialog(QDialog):
         self._title_edit = self._build_line_edit_page("Window title contains...")
         self._volume_page = self._build_volume_page()
         self._bank_name_edit = self._build_bank_name_page()
+        self._sensitivity_edit = self._build_sensitivity_page()
 
         body = QHBoxLayout()
         body.addWidget(self._action_list)
@@ -229,6 +236,18 @@ class ActionConfigDialog(QDialog):
         self._param_stack.addWidget(page)
         return edit
 
+    def _build_sensitivity_page(self) -> QLineEdit:
+        page = QWidget(self)
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(QLabel("Scroll sensitivity (0.1 - 3.0, default 1.0):", page))
+        edit = QLineEdit(page)
+        edit.setText("1.0")
+        layout.addWidget(edit)
+        layout.addStretch(1)
+        self._param_stack.addWidget(page)
+        return edit
+
     def _param_edit_for(self, action: str) -> QLineEdit | None:
         return {"launch_program": self._path_edit, "open_url": self._url_edit, "focus_window": self._title_edit}.get(
             action
@@ -243,6 +262,9 @@ class ActionConfigDialog(QDialog):
         if binding.action == "switch_bank":
             bank_id = binding.params.get("bank_id", "")
             self._bank_name_edit.setText(self._bank_names.get(bank_id, ""))
+            return
+        if binding.action in ("scroll_horizontal", "scroll_vertical"):
+            self._sensitivity_edit.setText(str(binding.params.get("sensitivity", 1.0)))
             return
         key = PARAM_KEY.get(binding.action)
         if key:
@@ -286,6 +308,13 @@ class ActionConfigDialog(QDialog):
             # The real bank_id is assigned by the caller (new bank, or the existing
             # locked control's target) - this dialog only ever supplies the name.
             return Binding(control=self._control, type="trigger", action="switch_bank", params={})
+        if action in ("scroll_horizontal", "scroll_vertical"):
+            try:
+                sensitivity = float(self._sensitivity_edit.text())
+            except ValueError:
+                sensitivity = 1.0
+            sensitivity = max(0.1, min(3.0, sensitivity))
+            return Binding(control=self._control, type="continuous", action=action, params={"sensitivity": sensitivity})
         key = PARAM_KEY.get(action)
         edit = self._param_edit_for(action)
         params = {key: edit.text()} if key and edit else {}

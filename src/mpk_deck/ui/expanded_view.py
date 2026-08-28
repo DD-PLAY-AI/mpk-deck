@@ -1,7 +1,8 @@
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtWidgets import QApplication, QFrame, QLabel, QPushButton, QWidget
+from PySide6.QtWidgets import QApplication, QFrame, QLabel, QMenu, QPushButton, QWidget
 
 from mpk_deck.config import ACCENT_HEX, ACCENT_RGB
+from mpk_deck.ui.joystick_geometry import clamp_deflection
 from mpk_deck.ui.keybed import NUM_KEYS, compute_keybed_rects, is_black_key
 from mpk_deck.ui.mini_view import PadButton
 from mpk_deck.ui.scaling import compute_scale
@@ -96,6 +97,82 @@ class _DebouncedKey(QFrame):
         super().mouseDoubleClickEvent(event)
 
 
+class JoystickWidget(QFrame):
+    """Visual-only joystick indicator. Mouse drag previews the handle position but
+    never triggers a scroll - the OS cursor sits on this widget while dragging, so a
+    real scroll here would land on mpk-deck's own window, not whatever app the user
+    is working in (see docs/superpowers/specs/2026-08-28-joystick-scroll-design.md).
+    Real hardware input drives both the visual position (via set_deflection, called
+    from MainWindow's on_continuous callback) and the actual scroll (via ActionEngine,
+    entirely outside this widget)."""
+
+    axis_configure_requested = Signal(str)  # "joystick_x" or "joystick_y"
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._handle = QFrame(self)
+        self._x = 0.0
+        self._y = 0.0
+
+    def set_deflection(self, x: float, y: float) -> None:
+        self._x = max(-1.0, min(1.0, x))
+        self._y = max(-1.0, min(1.0, y))
+        self._reposition_handle()
+
+    def apply_style(self, colors: dict[str, str], diameter: int) -> None:
+        self.setFixedSize(diameter, diameter)
+        self.setStyleSheet(
+            f"QFrame {{ background: {colors['fill']}; border: 2px solid {ACCENT_HEX}; "
+            f"border-radius: {diameter // 2}px; }}"
+        )
+        self._handle.setStyleSheet(f"QFrame {{ background: {ACCENT_HEX}; border-radius: 999px; }}")
+        self._reposition_handle()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        super().resizeEvent(event)
+        self._reposition_handle()
+
+    def _reposition_handle(self) -> None:
+        base_r = self.width() / 2
+        handle_d = max(1, round(self.width() * 0.4))
+        handle_r = handle_d / 2
+        self._handle.setFixedSize(handle_d, handle_d)
+        cx = base_r + self._x * (base_r - handle_r) - handle_r
+        cy = base_r + self._y * (base_r - handle_r) - handle_r
+        self._handle.move(round(cx), round(cy))
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_from_mouse(event.position())
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        if event.buttons() & Qt.MouseButton.LeftButton:
+            self._drag_from_mouse(event.position())
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        self.set_deflection(0.0, 0.0)
+        super().mouseReleaseEvent(event)
+
+    def _drag_from_mouse(self, pos) -> None:
+        cx, cy = self.width() / 2, self.height() / 2
+        x, y = clamp_deflection(pos.x() - cx, pos.y() - cy, self.width() / 2)
+        self.set_deflection(x, y)
+
+    def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        menu = QMenu(self)
+        x_action = menu.addAction("Horizontal (joystick_x)")
+        y_action = menu.addAction("Vertical (joystick_y)")
+        chosen = menu.exec(event.globalPosition().toPoint())
+        if chosen is x_action:
+            self.axis_configure_requested.emit("joystick_x")
+        elif chosen is y_action:
+            self.axis_configure_requested.emit("joystick_y")
+        super().mouseDoubleClickEvent(event)
+
+
 def _button_qss(colors: dict[str, str], font_px: float, radius: float) -> str:
     return (
         f"QPushButton {{ background: {colors['fill']}; border: 1px solid {colors['border']}; "
@@ -117,9 +194,8 @@ class ExpandedView(WindowGripMixin, QWidget):
         self.setMinimumSize(BASE_WIDTH, 284)  # keeps the 312:184 aspect ratio roughly intact
         self._dark = dark
 
-        self._joystick = PadButton("JOY", self)
-        self._joystick.activated.connect(lambda: self.control_activated.emit("joystick"))
-        self._joystick.configure_requested.connect(lambda: self.control_configure_requested.emit("joystick"))
+        self._joystick = JoystickWidget(self)
+        self._joystick.axis_configure_requested.connect(self.control_configure_requested.emit)
 
         self._buttons: dict[str, PadButton] = {}
         for control, text, tooltip in LEFT_BUTTONS + RIGHT_BUTTONS:
@@ -174,6 +250,9 @@ class ExpandedView(WindowGripMixin, QWidget):
         )
         self._layout_controls()
 
+    def set_joystick_deflection(self, x: float, y: float) -> None:
+        self._joystick.set_deflection(x, y)
+
     def resizeEvent(self, event) -> None:  # noqa: N802 (Qt override)
         super().resizeEvent(event)
         self._layout_controls()
@@ -190,15 +269,7 @@ class ExpandedView(WindowGripMixin, QWidget):
         knob_d = round(BASE_KNOB_D * scale)
         knob_font = BASE_KNOB_FONT * scale
 
-        joy_qss = (
-            f"QPushButton {{ background: {colors['fill']}; border: 2px solid {ACCENT_HEX}; "
-            f"border-radius: {joy_d // 2}px; color: {colors['text']}; font-size: {btn_font:.0f}px; "
-            f"font-weight: 700; }}"
-            f"QPushButton:hover {{ background: {colors['fill_hover']}; }}"
-            f"QPushButton:pressed {{ background: {colors['fill_pressed']}; }}"
-        )
-        self._joystick.setStyleSheet(joy_qss)
-        self._joystick.setFixedSize(joy_d, joy_d)
+        self._joystick.apply_style(colors, joy_d)
 
         btn_qss = _button_qss(colors, btn_font, radius=4 * scale)
         for control, btn in self._buttons.items():

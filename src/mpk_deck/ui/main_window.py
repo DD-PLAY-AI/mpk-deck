@@ -15,8 +15,16 @@ from mpk_deck.config import (
     save_last_theme,
 )
 from mpk_deck.core.action_engine import ActionEngine
-from mpk_deck.core.action_registry import Bank, Binding, DeckConfig, generate_bank_id, load_config, save_config
-from mpk_deck.core.handlers import focus_window, launch_program, open_url, set_system_volume
+from mpk_deck.core.action_registry import (
+    Bank,
+    Binding,
+    DeckConfig,
+    default_joystick_bindings,
+    generate_bank_id,
+    load_config,
+    save_config,
+)
+from mpk_deck.core.handlers import focus_window, launch_program, open_url, scroll_horizontal, scroll_vertical, set_system_volume
 from mpk_deck.midi.mpk_controller import MPKController
 from mpk_deck.ui.action_config_dialog import ActionConfigDialog
 from mpk_deck.ui.bank_indicator import BankIndicator
@@ -28,14 +36,17 @@ logger = logging.getLogger(__name__)
 
 MIDI_POLL_INTERVAL_MS = 3000
 STATUS_DOT_MARGIN = 10
+JOYSTICK_TIMER_INTERVAL_MS = 50  # 20Hz repeat-while-held; only runs while deflected
 
 
-def build_action_engine(config: DeckConfig, on_bank_changed) -> ActionEngine:
-    engine = ActionEngine(on_bank_changed=on_bank_changed)
+def build_action_engine(config: DeckConfig, on_bank_changed, on_continuous) -> ActionEngine:
+    engine = ActionEngine(on_bank_changed=on_bank_changed, on_continuous=on_continuous)
     engine.register_trigger("launch_program", launch_program)
     engine.register_trigger("open_url", open_url)
     engine.register_trigger("focus_window", focus_window)
     engine.register_continuous("set_system_volume", set_system_volume)
+    engine.register_continuous("scroll_horizontal", scroll_horizontal)
+    engine.register_continuous("scroll_vertical", scroll_vertical)
     engine.load_banks(
         {bank_id: bank.bindings for bank_id, bank in config.banks.items()},
         config.switch_bindings,
@@ -70,9 +81,13 @@ class MainWindow(QMainWindow):
 
         self._config = load_config(DEFAULT_ACTIONS_PATH)
         self._bank_names: dict[str, str] = {bank_id: bank.name for bank_id, bank in self._config.banks.items()}
-        self._engine = build_action_engine(self._config, self._on_bank_changed)
+        self._joystick_values: dict[str, float] = {"joystick_x": 0.0, "joystick_y": 0.0}
+        self._engine = build_action_engine(self._config, self._on_bank_changed, self._on_joystick_continuous)
         self._bindings: dict[str, Binding] = dict(self._engine.bindings)
         self._resizing_guard = False
+
+        self._joystick_timer = QTimer(self)
+        self._joystick_timer.timeout.connect(self._on_joystick_timer_tick)
 
         self._midi = MPKController(self._engine)
         self._midi_detected = self._midi.start()
@@ -231,6 +246,27 @@ class MainWindow(QMainWindow):
         self._config.active_bank = bank_id
         save_config(DEFAULT_ACTIONS_PATH, self._config)
 
+    def _on_joystick_continuous(self, control: str, value: float) -> None:
+        QTimer.singleShot(0, lambda: self._apply_joystick_continuous(control, value))
+
+    def _apply_joystick_continuous(self, control: str, value: float) -> None:
+        if control not in self._joystick_values:
+            return
+        self._joystick_values[control] = value
+        self._expanded_view.set_joystick_deflection(
+            self._joystick_values["joystick_x"], self._joystick_values["joystick_y"]
+        )
+        any_active = any(v != 0.0 for v in self._joystick_values.values())
+        if any_active and not self._joystick_timer.isActive():
+            self._joystick_timer.start(JOYSTICK_TIMER_INTERVAL_MS)
+        elif not any_active and self._joystick_timer.isActive():
+            self._joystick_timer.stop()
+
+    def _on_joystick_timer_tick(self) -> None:
+        for control, value in self._joystick_values.items():
+            if value != 0.0:
+                self._engine.set_continuous(control, value)
+
     def _on_control_configure_requested(self, control: str) -> None:
         existing = self._bindings.get(control)
         dialog = ActionConfigDialog(control, existing, parent=self, bank_names=self._bank_names)
@@ -252,7 +288,7 @@ class MainWindow(QMainWindow):
             self._config.banks[bank_id].name = bank_name
         else:
             bank_id = generate_bank_id(bank_name, self._config.banks.keys())
-            self._config.banks[bank_id] = Bank(name=bank_name, bindings=[])
+            self._config.banks[bank_id] = Bank(name=bank_name, bindings=default_joystick_bindings())
             self._config.switch_bindings[control] = bank_id
         self._bank_names[bank_id] = bank_name
         binding = Binding(control=control, type="trigger", action="switch_bank", params={"bank_id": bank_id})

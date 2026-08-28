@@ -59,18 +59,21 @@ Two additions to `translate()`:
   where `normalized = max(-1.0, min(1.0, message.pitch / 8192))` (`mido`'s
   pitchwheel range is -8192..8191, 0 = center).
 - `message.type == "control_change"` and `message.control == JOYSTICK_Y_CC`
-  (new constant, `JOYSTICK_Y_CC = 1`, same tentative CC as the existing
-  `KNOB_CC_TO_CONTROL` entry for `knob_1` — see Open Questions) ->
+  (new constant, `JOYSTICK_Y_CC = 1`, same tentative CC `mpk-deck/CLAUDE.md`
+  already suspected for the joystick's Y axis — see Open Questions) ->
   `ControlEvent(control="joystick_y", kind="continuous", value=normalized)`,
   where `normalized = max(-1.0, min(1.0, (message.value - 64) / 64))` (CC
   is 0..127, 64 = assumed center).
-- The existing `KNOB_CC_TO_CONTROL` check is tried first; if a future live
-  test shows the joystick's Y axis really does collide with `knob_1` on
-  the same CC number, whichever check runs first wins arbitrarily and the
-  two controls become physically indistinguishable — see Open Questions.
-  No code change is needed to *express* the eventual fix (moving
-  `JOYSTICK_Y_CC` or shrinking `KNOB_CC_TO_CONTROL`'s range is a one-line
-  constant change once the real CC numbers are known).
+- This check runs **before** `KNOB_CC_TO_CONTROL`, not after: CC1 is also
+  `KNOB_CC_TO_CONTROL`'s existing entry for `knob_1`, and this round's
+  purpose is making the joystick work, not preserving `knob_1`. If the two
+  really do collide on the real device, `knob_1` becomes unreachable via
+  CC1 until a live test resolves it (shift `KNOB_CC_TO_CONTROL` to start
+  at CC2, or move `JOYSTICK_Y_CC` to whatever the real number turns out to
+  be) — a one-line constant change either way, not a redesign. This is the
+  same known risk `mpk-deck/CLAUDE.md` already flagged before this
+  sub-project started, just now resolved in the joystick's favor by
+  default instead of left unresolved.
 
 Both new `ControlEvent`s are `kind="continuous"`, value range -1.0..1.0 —
 deliberately different from knobs' existing 0.0..1.0 (a knob's value is an

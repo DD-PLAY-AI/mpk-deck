@@ -1,8 +1,10 @@
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtWidgets import QApplication, QPushButton, QWidget
+from PySide6.QtGui import QColor
+from PySide6.QtWidgets import QApplication, QGraphicsDropShadowEffect, QPushButton, QWidget
 
-from mpk_deck.config import ACCENT_HEX, ACCENT_RGB
+from mpk_deck.config import ACCENT_HEX
 from mpk_deck.core.action_registry import Binding
+from mpk_deck.ui.accent import hex_to_rgb_str
 from mpk_deck.ui.action_config_dialog import ACTION_GLYPHS, ACTION_LABELS
 from mpk_deck.ui.grid_layout import compute_pad_rects
 from mpk_deck.ui.window_grip import WindowGripMixin
@@ -14,12 +16,14 @@ ASPECT = COLS / ROWS
 MARGIN, SPACING = 20, 8
 BORDER_VISUAL = 2  # thin visible edge-light inside the wider (BORDER) grab zone
 
-LIGHT_QSS = f"""
+
+def _light_qss(accent_hex: str, accent_rgb: str) -> str:
+    return f"""
 QWidget#miniPanel {{
     background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
         stop:0 rgba(255,255,255,120), stop:1 rgba(235,240,255,150));
     border-radius: 16px;
-    border: {BORDER_VISUAL}px solid rgba({ACCENT_RGB},130);
+    border: {BORDER_VISUAL}px solid rgba({accent_rgb},130);
 }}
 QPushButton {{
     background: rgba(255,255,255,140);
@@ -30,15 +34,17 @@ QPushButton {{
     font-weight: 600;
 }}
 QPushButton:hover {{ background: rgba(255,255,255,190); }}
-QPushButton:pressed {{ background: rgba(220,225,240,190); border: 1px solid {ACCENT_HEX}; }}
+QPushButton:pressed {{ background: rgba(220,225,240,190); border: 1px solid {accent_hex}; }}
 """
 
-DARK_QSS = f"""
+
+def _dark_qss(accent_hex: str, accent_rgb: str) -> str:
+    return f"""
 QWidget#miniPanel {{
     background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
         stop:0 rgba(20,22,28,217), stop:1 rgba(10,12,16,191));
     border-radius: 16px;
-    border: {BORDER_VISUAL}px solid rgba({ACCENT_RGB},100);
+    border: {BORDER_VISUAL}px solid rgba({accent_rgb},100);
 }}
 QPushButton {{
     background: rgba(255,255,255,18);
@@ -49,12 +55,19 @@ QPushButton {{
     font-weight: 600;
 }}
 QPushButton:hover {{ background: rgba(255,255,255,34); }}
-QPushButton:pressed {{ background: rgba(255,255,255,10); border: 1px solid {ACCENT_HEX}; }}
+QPushButton:pressed {{ background: rgba(255,255,255,10); border: 1px solid {accent_hex}; }}
 """
 
 
 class PadButton(QPushButton):
-    """A button that tells single clicks (trigger) apart from double clicks (configure)."""
+    """A button that tells single clicks (trigger) apart from double clicks (configure).
+
+    Also owns the accent-colored press glow (a QGraphicsDropShadowEffect kept
+    attached permanently and toggled via setEnabled, rather than
+    attached/detached per press - simpler and avoids effect-teardown timing
+    issues). Shared by MiniView and ExpandedView, so the glow behavior is
+    identical everywhere a pad/button reacts to a press.
+    """
 
     activated = Signal()
     configure_requested = Signal()
@@ -66,6 +79,17 @@ class PadButton(QPushButton):
         self._click_timer.setSingleShot(True)
         self._click_timer.timeout.connect(self.activated.emit)
         self.clicked.connect(self._on_clicked)
+        self._accent_hex = ACCENT_HEX
+        self._glow = QGraphicsDropShadowEffect(self)
+        self._glow.setBlurRadius(16)
+        self._glow.setOffset(0, 0)
+        self._glow.setColor(QColor(self._accent_hex))
+        self._glow.setEnabled(False)
+        self.setGraphicsEffect(self._glow)
+
+    def set_accent(self, accent_hex: str) -> None:
+        self._accent_hex = accent_hex
+        self._glow.setColor(QColor(accent_hex))
 
     def _on_clicked(self) -> None:
         self._click_timer.start(QApplication.doubleClickInterval())
@@ -74,6 +98,14 @@ class PadButton(QPushButton):
         self._click_timer.stop()
         self.configure_requested.emit()
         super().mouseDoubleClickEvent(event)
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        self._glow.setEnabled(True)
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        self._glow.setEnabled(False)
+        super().mouseReleaseEvent(event)
 
 
 class MiniView(WindowGripMixin, QWidget):
@@ -85,17 +117,31 @@ class MiniView(WindowGripMixin, QWidget):
         self.setObjectName("miniPanel")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self._labels = labels or {}
+        self._dark = dark
+        self._accent_hex = ACCENT_HEX
         self._pads: dict[str, PadButton] = {}
         for control in PAD_ORDER:
             button = PadButton(self._labels.get(control, control.upper()), self)
             button.activated.connect(lambda c=control: self.pad_activated.emit(c))
             button.configure_requested.connect(lambda c=control: self.pad_configure_requested.emit(c))
             self._pads[control] = button
-        self.set_dark(dark)
+        self._apply_style()
         self._layout_pads()
 
     def set_dark(self, dark: bool) -> None:
-        self.setStyleSheet(DARK_QSS if dark else LIGHT_QSS)
+        self._dark = dark
+        self._apply_style()
+
+    def set_accent(self, accent_hex: str) -> None:
+        self._accent_hex = accent_hex
+        for pad in self._pads.values():
+            pad.set_accent(accent_hex)
+        self._apply_style()
+
+    def _apply_style(self) -> None:
+        accent_rgb = hex_to_rgb_str(self._accent_hex)
+        qss = _dark_qss(self._accent_hex, accent_rgb) if self._dark else _light_qss(self._accent_hex, accent_rgb)
+        self.setStyleSheet(qss)
 
     def update_bindings(self, bindings: dict[str, Binding]) -> None:
         """Reflect each pad's bound action as a big icon instead of the bare control id."""

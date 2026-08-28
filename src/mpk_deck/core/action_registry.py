@@ -48,6 +48,34 @@ def generate_bank_id(name: str, existing_ids: Iterable[str]) -> str:
     return candidate
 
 
+DEFAULT_JOYSTICK_SENSITIVITY = 1.0
+
+
+def default_joystick_bindings() -> list[Binding]:
+    """Every bank should scroll out of the box - see docs/superpowers/specs/
+    2026-08-28-joystick-scroll-design.md. Returns a fresh list every call; Binding
+    is frozen but the containing list must never be shared/mutated across banks."""
+    return [
+        Binding(
+            control="joystick_x",
+            type="continuous",
+            action="scroll_horizontal",
+            params={"sensitivity": DEFAULT_JOYSTICK_SENSITIVITY},
+        ),
+        Binding(
+            control="joystick_y",
+            type="continuous",
+            action="scroll_vertical",
+            params={"sensitivity": DEFAULT_JOYSTICK_SENSITIVITY},
+        ),
+    ]
+
+
+def _backfill_joystick_bindings(bindings: list[Binding]) -> list[Binding]:
+    controls = {b.control for b in bindings}
+    return bindings + [b for b in default_joystick_bindings() if b.control not in controls]
+
+
 def _parse_bindings_list(raw_bindings: list) -> list[Binding]:
     bindings: list[Binding] = []
     for i, entry in enumerate(raw_bindings):
@@ -62,7 +90,7 @@ def _default_config() -> DeckConfig:
     return DeckConfig(
         active_bank=DEFAULT_BANK_ID,
         switch_bindings={DEFAULT_SWITCH_CONTROL: DEFAULT_BANK_ID},
-        banks={DEFAULT_BANK_ID: Bank(name=DEFAULT_BANK_NAME, bindings=[])},
+        banks={DEFAULT_BANK_ID: Bank(name=DEFAULT_BANK_NAME, bindings=default_joystick_bindings())},
     )
 
 
@@ -90,7 +118,7 @@ def load_config(path: str | Path) -> DeckConfig:
 
     # old flat format (or an empty/near-empty file) -> migrate
     raw_bindings = data.get("bindings", []) or []
-    bindings = _parse_bindings_list(raw_bindings)
+    bindings = _backfill_joystick_bindings(_parse_bindings_list(raw_bindings))
     return DeckConfig(
         active_bank=DEFAULT_BANK_ID,
         switch_bindings={DEFAULT_SWITCH_CONTROL: DEFAULT_BANK_ID},
@@ -102,9 +130,10 @@ def _parse_new_format(data: dict) -> DeckConfig:
     banks = {}
     for bank_id, bank_data in (data.get("banks") or {}).items():
         raw_bindings = bank_data.get("bindings", []) or []
-        banks[bank_id] = Bank(name=bank_data.get("name", bank_id), bindings=_parse_bindings_list(raw_bindings))
+        bindings = _backfill_joystick_bindings(_parse_bindings_list(raw_bindings))
+        banks[bank_id] = Bank(name=bank_data.get("name", bank_id), bindings=bindings)
     if not banks:
-        banks = {DEFAULT_BANK_ID: Bank(name=DEFAULT_BANK_NAME, bindings=[])}
+        banks = {DEFAULT_BANK_ID: Bank(name=DEFAULT_BANK_NAME, bindings=default_joystick_bindings())}
     switch_bindings = dict(data.get("switch_bindings") or {})
     active_bank = data.get("active_bank") or DEFAULT_BANK_ID
     if active_bank not in banks:

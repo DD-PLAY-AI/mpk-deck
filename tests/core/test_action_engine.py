@@ -134,3 +134,32 @@ def test_switch_bank_to_unknown_bank_is_ignored():
 
     assert engine.active_bank == "bank_a"
     assert calls == []
+
+
+def test_set_continuous_calls_on_continuous_callback_for_any_control():
+    calls = []
+    engine = ActionEngine(on_continuous=lambda c, v: calls.append((c, v)))
+
+    engine.set_continuous("joystick_x", 0.5)
+
+    assert calls == [("joystick_x", 0.5)]
+
+
+def test_set_continuous_calls_on_continuous_even_when_handler_is_registered():
+    calls = []
+    engine = ActionEngine(on_continuous=lambda c, v: calls.append((c, v)))
+    engine.register_continuous("scroll_horizontal", lambda params, value: None)
+    engine.load_banks(
+        {"bank_a": [Binding(control="joystick_x", type="continuous", action="scroll_horizontal", params={})]},
+        switch_bindings={},
+        active_bank="bank_a",
+    )
+
+    engine.set_continuous("joystick_x", 0.7)
+
+    assert calls == [("joystick_x", 0.7)]
+
+
+def test_set_continuous_without_on_continuous_callback_does_not_raise():
+    engine = ActionEngine()
+    engine.set_continuous("joystick_x", 0.5)

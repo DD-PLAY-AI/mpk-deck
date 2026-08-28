@@ -10,7 +10,11 @@ ContinuousHandler = Callable[[dict, float], None]
 
 
 class ActionEngine:
-    def __init__(self, on_bank_changed: Optional[Callable[[str], None]] = None) -> None:
+    def __init__(
+        self,
+        on_bank_changed: Optional[Callable[[str], None]] = None,
+        on_continuous: Optional[Callable[[str, float], None]] = None,
+    ) -> None:
         self._trigger_handlers: dict[str, TriggerHandler] = {}
         self._continuous_handlers: dict[str, ContinuousHandler] = {}
         self._bindings_by_control: dict[str, Binding] = {}
@@ -18,6 +22,7 @@ class ActionEngine:
         self._switch_bindings: dict[str, str] = {}
         self._active_bank: str = ""
         self._on_bank_changed = on_bank_changed
+        self._on_continuous = on_continuous
 
     def register_trigger(self, action_name: str, handler: TriggerHandler) -> None:
         self._trigger_handlers[action_name] = handler
@@ -70,6 +75,8 @@ class ActionEngine:
         handler(binding.params)
 
     def set_continuous(self, control: str, value: float) -> None:
+        if self._on_continuous is not None:
+            self._on_continuous(control, value)
         binding = self._bindings_by_control.get(control)
         if binding is None:
             return

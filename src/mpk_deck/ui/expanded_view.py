@@ -35,6 +35,9 @@ RIGHT_BUTTONS = [
     ("prog_select", "SEL", "Prog Select"),
 ]
 GROUPED_RIGHT_BUTTONS = ["bank_ab", "cc", "prog_change"]  # spec: bordered as one group, SEL set apart
+DECORATIVE_CONTROLS = frozenset(
+    c for c, _text, _tip in LEFT_BUTTONS + RIGHT_BUTTONS
+)  # every MPK function button - none of them transmit MIDI
 
 BASE_JOYSTICK_D = 40
 BASE_BTN_W, BASE_BTN_H = 34, 16
@@ -294,6 +297,7 @@ def _button_qss(colors: dict[str, str], font_px: float, radius: float, accent_he
 class ExpandedView(WindowGripMixin, QWidget):
     control_activated = Signal(str)
     control_configure_requested = Signal(str)
+    decorative_button_activated = Signal(str)
 
     def __init__(self, dark: bool = False, parent=None) -> None:
         super().__init__(parent, aspect=ASPECT, min_width=BASE_WIDTH)
@@ -311,8 +315,8 @@ class ExpandedView(WindowGripMixin, QWidget):
         for control, text, tooltip in LEFT_BUTTONS + RIGHT_BUTTONS:
             btn = PadButton(text, self)
             btn.setToolTip(tooltip)
-            btn.activated.connect(lambda c=control: self.control_activated.emit(c))
-            btn.configure_requested.connect(lambda c=control: self.control_configure_requested.emit(c))
+            # function buttons send no MIDI - decorative only, no action wiring
+            btn.configure_requested.connect(lambda c=control: self.decorative_button_activated.emit(c))
             self._buttons[control] = btn
 
         self._bank_group = QFrame(self)
@@ -396,8 +400,9 @@ class ExpandedView(WindowGripMixin, QWidget):
         self._joystick.apply_style(colors, self._accent_hex, joy_d)
 
         btn_qss = _button_qss(colors, btn_font, radius=4 * scale, accent_hex=self._accent_hex)
+        muted_qss = btn_qss + " QPushButton { color: rgba(150,150,160,150); }"
         for control, btn in self._buttons.items():
-            btn.setStyleSheet(btn_qss)
+            btn.setStyleSheet(muted_qss if control in DECORATIVE_CONTROLS else btn_qss)
             btn.setFixedSize(btn_w, btn_h)
 
         pad_qss = _button_qss(colors, pad_font, radius=12 * scale, accent_hex=self._accent_hex)

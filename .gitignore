@@ -214,6 +214,9 @@ cython_debug/
 # Temporary file for partial code execution
 tempCodeRunnerFile.py
 
+# Local hardware capture spikes (never commit)
+scratchpad/
+
 # Ruff stuff:
 .ruff_cache/
 

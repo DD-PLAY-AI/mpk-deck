@@ -1,6 +1,7 @@
 import mido
 
 from mpk_deck.core.action_engine import ActionEngine
+from mpk_deck.midi import mpk_controller
 from mpk_deck.midi.mpk_controller import MPKController
 
 
@@ -55,6 +56,79 @@ class _FakePort:
 
     def close(self) -> None:
         self.closed = True
+
+
+class _FakeRtMidiIn:
+    def __init__(self) -> None:
+        self.error_callback = None
+
+    def set_error_callback(self, callback) -> None:
+        self.error_callback = callback
+
+
+class _FakeRtMidiPort(_FakePort):
+    def __init__(self) -> None:
+        super().__init__()
+        self._rt = _FakeRtMidiIn()
+
+
+class _RaisingErrorCallbackRtMidiIn:
+    def set_error_callback(self, callback) -> None:
+        raise RuntimeError("unsupported")
+
+
+class _RaisingErrorCallbackPort(_FakePort):
+    def __init__(self) -> None:
+        super().__init__()
+        self._rt = _RaisingErrorCallbackRtMidiIn()
+
+
+def test_start_installs_non_raising_rtmidi_error_callback(monkeypatch, caplog):
+    port = _FakeRtMidiPort()
+    monkeypatch.setattr(mido, "get_input_names", lambda: ["MPK mini mk II 1"])
+    monkeypatch.setattr(mido, "open_input", lambda name, callback: port)
+    controller = MPKController(action_engine=ActionEngine())
+
+    assert controller.start() is True
+    assert port._rt.error_callback is not None
+
+    port._rt.error_callback(7, "device removed", None)  # must not raise
+
+    assert "device removed" in caplog.text
+
+
+def test_start_survives_error_callback_install_failure(monkeypatch):
+    monkeypatch.setattr(mido, "get_input_names", lambda: ["MPK mini mk II 1"])
+    monkeypatch.setattr(
+        mido, "open_input", lambda name, callback: _RaisingErrorCallbackPort()
+    )
+    controller = MPKController(action_engine=ActionEngine())
+
+    assert controller.start() is True
+
+
+def test_on_message_swallows_translate_error(monkeypatch, caplog):
+    def raise_from_translate(message):
+        raise RuntimeError("translate failed")
+
+    monkeypatch.setattr(mpk_controller, "translate", raise_from_translate)
+    controller = MPKController(action_engine=ActionEngine())
+
+    controller._on_message(mido.Message("note_on", note=36, velocity=100))  # must not raise
+
+    assert "error handling MIDI input callback" in caplog.text
+    assert "translate failed" in caplog.text
+
+
+def test_on_message_swallows_engine_error(caplog):
+    engine = ActionEngine()
+    engine.trigger = lambda control: (_ for _ in ()).throw(RuntimeError("handler failed"))
+    controller = MPKController(action_engine=engine)
+
+    controller._on_message(mido.Message("note_on", note=36, velocity=100))  # must not raise
+
+    assert "error handling MIDI input callback" in caplog.text
+    assert "handler failed" in caplog.text
 
 
 def test_poll_connection_connects_when_device_appears(monkeypatch):

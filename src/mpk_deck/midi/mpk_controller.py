@@ -39,8 +39,21 @@ class MPKController:
                 logger.warning("failed to open MIDI port %s", name, exc_info=True)
             self._port = None
             return False
+        self._install_error_callback()
         logger.info("listening on MIDI port %s", name)
         return True
+
+    def _install_error_callback(self) -> None:
+        try:
+            rt = getattr(self._port, "_rt", None)
+            if rt is None or not hasattr(rt, "set_error_callback"):
+                return
+            rt.set_error_callback(self._on_rtmidi_error)
+        except Exception:
+            logger.debug("failed to install MIDI backend error callback", exc_info=True)
+
+    def _on_rtmidi_error(self, error_type, message, _data=None) -> None:
+        logger.warning("MIDI backend error (%s): %s", error_type, message)
 
     def stop(self) -> None:
         if self._port is not None:
@@ -66,10 +79,13 @@ class MPKController:
         return self.start(log=False)
 
     def _on_message(self, message: mido.Message) -> None:
-        event = translate(message)
-        if event is None:
-            return
-        if event.kind == "trigger":
-            self._engine.trigger(event.control)
-        else:
-            self._engine.set_continuous(event.control, event.value)
+        try:
+            event = translate(message)
+            if event is None:
+                return
+            if event.kind == "trigger":
+                self._engine.trigger(event.control)
+            else:
+                self._engine.set_continuous(event.control, event.value)
+        except Exception:
+            logger.warning("error handling MIDI input callback", exc_info=True)

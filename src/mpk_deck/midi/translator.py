@@ -3,18 +3,20 @@ from typing import Literal, Optional
 
 import mido
 
-# Factory-default MPK mini MK2 mapping: pads on notes 36-43 (Bank A), knobs on CC 1-8.
+# Factory-default MPK mini MK2 mapping (confirmed on hardware 2026-08-29, see
+# docs/superpowers/specs/2026-08-29-hardware-wiring-design.md): pads on notes
+# 36-43 (Bank A), knobs 2-8 on CC 2-8. Knob 1 and the joystick Y axis both send
+# CC 1 - the joystick wins (JOYSTICK_Y_CC check below runs first), so knob 1 has
+# no MIDI entry here and mirrors joystick_y in the UI instead.
 PAD_NOTE_TO_CONTROL = {36 + i: f"pad_{i + 1}" for i in range(8)}
 KNOB_CC_TO_CONTROL = {cc: f"knob_{cc}" for cc in range(2, 9)}
 KEYBED_BASE_NOTE = 48  # C3 - lowest key at the MPK mini MK2's default octave
 KEYBED_KEY_COUNT = 25  # 2 octaves + 1, matches the physical keybed and ui/keybed.py NUM_KEYS
 BANK_B_PAD_NOTES = frozenset(range(44, 48))  # Bank B pads that don't collide with the keybed
 
-# Tentative - unconfirmed on real hardware, see docs/superpowers/specs/
-# 2026-08-28-joystick-scroll-design.md "Open questions". Checked before
-# KNOB_CC_TO_CONTROL below, so if this really does collide with knob_1's CC on
-# the real device, the joystick wins and knob_1 becomes unreachable via CC1
-# until a live test resolves it with a one-line constant change.
+# Confirmed on hardware: the joystick Y axis is CC 1. Checked before
+# KNOB_CC_TO_CONTROL below, so the joystick owns CC 1 and knob 1 is unreachable
+# via MIDI (by design - knob 1 mirrors joystick_y in the UI).
 JOYSTICK_Y_CC = 1
 
 

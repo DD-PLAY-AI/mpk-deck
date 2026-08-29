@@ -16,11 +16,15 @@ tool-forced 구조화 출력으로만 호출하고, 절대 자동 실행/저장�
   `register_trigger`/`register_continuous`로 액션 이름 -> 핸들러 함수를
   등록하고, `load_banks(banks: dict[str, list[Binding]], switch_bindings:
   dict[str, str], active_bank: str)`로 뱅크별 바인딩을 적재한다. 생성자에
-  선택적 `on_bank_changed: Callable[[str], None]` 콜백과 `on_continuous:
-  Callable[[str, float], None]` 콜백(둘 다 옵션)을 받는다. `on_continuous`는
-  `set_continuous()`가 호출될 때마다 바인딩 존재 여부와 무관하게 무조건
-  발화 — UI가 하드웨어 입력을 시각적으로 미러링(조이스틱 손잡이, 노브
-  바늘)할 수 있게 해주는 용도, 실제 액션 디스패치와는 별개 경로. `switch_bank
+  선택적 `on_bank_changed: Callable[[str], None]`, `on_continuous:
+  Callable[[str, float], None]`, `on_trigger: Callable[[str, bool], None]`
+  콜백(전부 옵션)을 받는다. `on_continuous`는 `set_continuous()`가 호출될
+  때마다 바인딩 존재 여부와 무관하게 무조건 발화 — UI가 하드웨어 입력을
+  시각적으로 미러링(조이스틱 손잡이, 노브 바늘)할 수 있게 해주는 용도.
+  `on_trigger`는 등록된 핸들러가 실행된 뒤 발화(`(control, ok)` — 핸들러
+  예외는 `trigger()`가 잡아서 `ok=False`, 정상 반환은 `ok=True`, `switch_bank`
+  는 `ok=True`; 바인딩/핸들러 없으면 발화 안 함) — UI가 패드·건반에 성공=
+  초록/실패=빨강 플래시를 주는 용도. 둘 다 실제 액션 디스패치와는 별개 경로. `switch_bank
   (bank_id)` 메서드와 `active_bank` 프로퍼티를 노출. `trigger()`가
   `switch_bank` 액션을 직접 인식해서 `self.switch_bank(...)`를 호출 —
   `switch_bank`는 `handlers.py`에 등록되는 일반 핸들러가 아니라 엔진 내재
@@ -46,11 +50,21 @@ tool-forced 구조화 출력으로만 호출하고, 절대 자동 실행/저장�
   mini MK2 포트를 열고 콜백 기반으로 리슨 (폴링 없음) -> 각 메시지를
   `midi/translator.py`의 `translate()`(순수 함수, MIDI note/CC/pitchwheel ->
   `ControlEvent`)로 변환 -> `ActionEngine.trigger`/`set_continuous` 호출.
-  팩토리 기본 매핑: 패드 note 36-43 -> `pad_1`..`pad_8`, 노브 CC 1-8 ->
-  `knob_1`..`knob_8`, `pitchwheel` -> `joystick_x`, CC `JOYSTICK_Y_CC`(=1,
-  잠정치) -> `joystick_y`(둘 다 -1.0..1.0, 노브의 0.0..1.0과 다른 범위) —
-  `JOYSTICK_Y_CC` 체크가 `KNOB_CC_TO_CONTROL`보다 먼저라 실기에서 겹치면
-  조이스틱이 이김(`knob_1`이 그 CC로 도달 불가해짐, 의도적).
+  **하드웨어 확정 매핑(2026-08-29, sub-project F)**: 패드 note 36-43(Bank A)
+  -> `pad_1`..`pad_8`, 건반 note 48-72 -> `key_0`..`key_24`(`note-48`,
+  `KEYBED_BASE_NOTE`/`KEYBED_KEY_COUNT` 상수), 노브 CC 2-8 -> `knob_2`..
+  `knob_8`, `pitchwheel` -> `joystick_x`, CC 1 -> `joystick_y`. **knob_1은
+  MIDI 매핑 없음** — CC 1을 조이스틱 Y와 공유하고 `JOYSTICK_Y_CC` 체크가
+  `KNOB_CC_TO_CONTROL`보다 먼저라 조이스틱이 이김(의도적, knob_1은 UI에서
+  joystick_y를 미러링). 건반 범위 밖(옥타브 시프트) 노트와 그 외 note/CC는
+  `None`으로 drop. `translate()` 외에 `is_bank_b_pad_note(message)` 순수
+  함수 — note_on 44-47(Bank B 패드, 건반과 안 겹치는 범위)이면 True.
+  `MPKController` 생성자의 `on_bank_b_pad` 콜백이 이걸로 발화 -> MainWindow가
+  "Bank A로 전환" 배너 표시.
+- `MPKController`는 생성자에 `on_bank_b_pad: Callable[[], None]`(옵션)도
+  받는다. 장치 언플러그 시 rtmidi WinMM 포트를 `close()`하면 C 레벨에서
+  프로세스가 죽으므로, `poll_connection`이 장치 소실을 감지하면 포트를
+  `close()` 없이 모듈 레벨 `_ABANDONED_PORTS`에 넣고 버린다(재연결 시 새 포트).
 - `config/actions.yaml`이 바인딩의 source of truth, 뱅크 인식 구조로
   확장됨. 손으로 수정하거나 `ui/action_config_dialog.py`의 GUI로 수정 —
   둘 다 같은 `load_config`/`save_config`를 거친다.
@@ -149,7 +163,23 @@ tool-forced 구조화 출력으로만 호출하고, 절대 자동 실행/저장�
   `ui/knob_geometry.py`의 `needle_angle()`로 실시간 값을 그리는 두 스타일
   지원: `"A"`(숫자 유지 + 작은 점이 궤도를 도는 방식), `"B"`(숫자 없이
   풀 니들만). `ExpandedView.set_knob_style(style)`/`set_accent(accent_hex)`
-  로 전환.
+  로 전환. **F(2026-08-29)**: `KnobWidget`에 더블클릭 처리 추가 —
+  `configure_requested`/`blocked_configure_requested` 시그널. knob 2~8은
+  `ExpandedView.control_configure_requested`로 이어지고, knob_1(label `"1"`,
+  `_locked=True`)은 `ExpandedView.knob_locked_activated`로 이어져 MainWindow가
+  "조이스틱 Y축과 같은 신호라 설정 불가" 안내. `PadButton`과 `_DebouncedKey`에
+  `flash(ok: bool)` 추가(재사용 `QTimer`로 ~200ms 초록/빨강 글로우) —
+  `MiniView.flash_control(control, ok)` / `ExpandedView.flash_control(control, ok)`가
+  MainWindow의 `on_trigger` 콜백에서 호출됨.
+- **F: 함수 버튼은 장식용**. `ExpandedView`의 `LEFT_BUTTONS`+`RIGHT_BUTTONS`
+  10개(arp/tap/oct▼/oct▲/full/rpt, bank_ab/cc/prog_change/prog_select)는
+  MK2가 MIDI를 안 보내므로 `DECORATIVE_CONTROLS`로 묶여 액션 배선 없음 +
+  흐린 스타일. 더블클릭하면 `decorative_button_activated(control)` 시그널 ->
+  MainWindow가 `QMessageBox`로 "MIDI 전송 안 함, 설정 불가" 안내.
+- `ui/bank_hint.py`의 `BankHint(QLabel)` — `is_bank_b_pad_note`가 감지되면
+  MainWindow가 `show_hint()` 호출, 상단 중앙에 "패드를 Bank A로 전환" 배너를
+  ~4초 표시 후 자동 숨김(`_hide_timer`). `BankIndicator`/`MidiStatusDot`과
+  같은 `MainWindow` 오버레이 패턴, `set_accent(accent_hex)`.
 - `core/program_finder.py`: Start Menu(`%APPDATA%`/`%PROGRAMDATA%`)의
   `.lnk` 재귀 스캔 -> `win32com.client`(WScript.Shell)로 타겟 exe resolve.
   `list_installed_programs(search_dirs=, resolver=)` 둘 다 주입 가능 —
@@ -341,15 +371,30 @@ Artifact로 게시)으로 디자인을 다시 잡는 쪽으로 커졌고, 최종
 5. **E. 노브 마우스 휠 조작** — ExpandedView 노브 위에서 마우스 휠 돌리면
    해당 노브의 continuous 액션이 값 변경(휠은 델타값이라 절대값 아닌 누적
    로직 필요).
-6. **F. 실제 MPK mini MK2 하드웨어 신호 연동** — A~E를 소프트웨어로 먼저
-   완성한 뒤 실기로 end-to-end 검증(이 프로젝트 기존 방식과 동일). 이때
-   확인 필요한 기존 이슈: `midi/translator.py`가 `pitchwheel` 메시지를
-   전혀 처리 안 해서 물리 조이스틱 X축이 무시됨, Y축은 보통 CC1(모드휠)로
-   들어오는데 CC1이 지금 `knob_1`에 매핑돼있고 `knob_1`은 `actions.yaml`에서
-   `set_system_volume`에 바인딩돼있어 조이스틱을 세로로 밀면 시스템 볼륨이
-   바뀔 수 있음(연동 전에 미리 알아둘 것). Bank B 패드 노트(44-51 추정)도
-   `PAD_NOTE_TO_CONTROL`에 없어서 지금은 `key_{note}`로 떨어짐 — 새로 만든
-   `key_0`~`key_24`(건반)와 노트 번호가 겹치는지 실기로 확인 필요.
+4b. **E. 노브 마우스 휠 조작** — 위 5번. 참고: 디자인 설정 라운드(2026-08-29)에서
+   `KnobWidget`이 실시간 값 인디케이터로 이미 재작성됨. F에서 knob_1 더블클릭 차단 +
+   knob 2~8 더블클릭 설정이 추가됨(스펙/플랜 2026-08-29). E는 여기에 휠 델타 누적만
+   얹으면 됨 — 재스코프 필요.
+6. ~~**F. 실제 MPK mini MK2 하드웨어 신호 연동**~~ — **완료, 2026-08-29.**
+   실기 캡처(`scratchpad/midi_monitor.py`)로 팩토리 MIDI 맵 확정 후 에디터
+   변경 없이 연동. 최종 매핑: `pitchwheel`→`joystick_x`, `CC1`→`joystick_y`
+   (knob_1도 같은 CC1 — 조이스틱이 이김, knob_1은 MIDI 매핑 없음 + UI에서
+   joystick_y 미러), `CC2~8`→`knob_2~8`, `note 36~43`→`pad_1~8`(패드는 사용자가
+   Bank A 유지), `note 48~72`→`key_0~24`(`note-48`), `note 44~47`→이벤트 없음 +
+   "Bank B → Bank A 전환" 배너. 함수 버튼 10개(OCT/ARP/TAP/FULL/RPT/CC/
+   CHG/SEL/BANK 등)는 MIDI를 전혀 안 보냄 → `ExpandedView`에서 비활성 스타일 +
+   더블클릭 시 "설정 불가" 안내. `ActionEngine`에 `on_trigger(control, ok)`
+   콜백 추가 → 패드·건반 성공=초록/실패=빨강 플래시. `translator.py`가 건반
+   범위 밖(옥타브 시프트) 노트는 drop(기본 옥타브 가정, 문서화된 제약).
+   `superpowers:subagent-driven-development`로 9개 태스크(스펙:
+   `docs/superpowers/specs/2026-08-29-hardware-wiring-design.md`, 계획:
+   `docs/superpowers/plans/2026-08-29-hardware-wiring.md`), 182 테스트 통과.
+   **실기 end-to-end 검증(모든 패드/건반/노브2~8/조이스틱 축, 함수 버튼 무반응,
+   실패 시 빨강 플래시, Bank B 배너)은 사용자 몫 — 아직 미확인.**
+
+**F 범위 밖 → 향후 라운드로 이월(로드맵 참고)**: Bank별 기능 유지/상속 옵션,
+기능표시 옵션(글자/생략/아이콘) 컨트롤별, 마우스 호버 툴팁, 패드 아이콘
+디자인(앱 아이콘 추출 등), 여러 건반 동시 입력(chord).
 
 **백로그(지금 스코프 아님, 사용자가 명시적으로 나중으로 미룸)**: Windows
 시작 시 자동 실행 + 작업표시줄 미표시(트레이 전용).

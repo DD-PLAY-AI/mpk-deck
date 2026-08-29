@@ -2,7 +2,7 @@ import logging
 
 from PySide6.QtCore import QRectF, Qt, QTimer
 from PySide6.QtGui import QActionGroup, QColor, QIcon, QPainter, QPixmap
-from PySide6.QtWidgets import QApplication, QMainWindow, QMenu, QSystemTrayIcon, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox, QMenu, QSystemTrayIcon, QVBoxLayout, QWidget
 
 from mpk_deck.config import (
     ACCENT_HEX,
@@ -33,6 +33,7 @@ from mpk_deck.midi.mpk_controller import MPKController
 from mpk_deck.ui.accent import ACCENT_CHOICES
 from mpk_deck.ui.action_config_dialog import ActionConfigDialog
 from mpk_deck.ui.bank_indicator import BankIndicator
+from mpk_deck.ui.bank_hint import BankHint
 from mpk_deck.ui.expanded_view import ExpandedView
 from mpk_deck.ui.midi_status_dot import MidiStatusDot
 from mpk_deck.ui.mini_view import MiniView
@@ -46,8 +47,8 @@ EXPANDED_DEFAULT_WIDTH = 680
 JOYSTICK_TIMER_INTERVAL_MS = 50  # 20Hz repeat-while-held; only runs while deflected
 
 
-def build_action_engine(config: DeckConfig, on_bank_changed, on_continuous) -> ActionEngine:
-    engine = ActionEngine(on_bank_changed=on_bank_changed, on_continuous=on_continuous)
+def build_action_engine(config: DeckConfig, on_bank_changed, on_continuous, on_trigger) -> ActionEngine:
+    engine = ActionEngine(on_bank_changed=on_bank_changed, on_continuous=on_continuous, on_trigger=on_trigger)
     engine.register_trigger("launch_program", launch_program)
     engine.register_trigger("open_url", open_url)
     engine.register_trigger("focus_window", focus_window)
@@ -102,7 +103,9 @@ class MainWindow(QMainWindow):
         self._config = load_config(DEFAULT_ACTIONS_PATH)
         self._bank_names: dict[str, str] = {bank_id: bank.name for bank_id, bank in self._config.banks.items()}
         self._joystick_values: dict[str, float] = {"joystick_x": 0.0, "joystick_y": 0.0}
-        self._engine = build_action_engine(self._config, self._on_bank_changed, self._on_joystick_continuous)
+        self._engine = build_action_engine(
+            self._config, self._on_bank_changed, self._on_joystick_continuous, self._on_trigger
+        )
         self._bindings: dict[str, Binding] = dict(self._engine.bindings)
         self._resizing_guard = False
         self._accent_hex = load_last_accent()
@@ -111,7 +114,7 @@ class MainWindow(QMainWindow):
         self._joystick_timer = QTimer(self)
         self._joystick_timer.timeout.connect(self._on_joystick_timer_tick)
 
-        self._midi = MPKController(self._engine)
+        self._midi = MPKController(self._engine, on_bank_b_pad=self._on_bank_b_pad)
         self._midi_detected = self._midi.start()
 
         self._midi_status_dot = MidiStatusDot(self)
@@ -123,6 +126,8 @@ class MainWindow(QMainWindow):
 
         self._bank_indicator = BankIndicator(self)
         self._bank_indicator.set_bank_name(self._bank_names.get(self._engine.active_bank, self._engine.active_bank))
+        self._bank_hint = BankHint(self)
+        self._bank_hint.set_accent(self._accent_hex)
 
         self._mini_view = MiniView()
         self._mini_view.pad_activated.connect(self._on_control_activated)
@@ -131,6 +136,8 @@ class MainWindow(QMainWindow):
         self._expanded_view = ExpandedView()
         self._expanded_view.control_activated.connect(self._on_control_activated)
         self._expanded_view.control_configure_requested.connect(self._on_control_configure_requested)
+        self._expanded_view.decorative_button_activated.connect(self._on_decorative_button)
+        self._expanded_view.knob_locked_activated.connect(self._on_knob_locked)
 
         container = QWidget(self)
         layout = QVBoxLayout(container)
@@ -246,6 +253,7 @@ class MainWindow(QMainWindow):
         self._expanded_view.set_accent(self._accent_hex)
         self._expanded_view.set_knob_style(self._knob_style)
         self._bank_indicator.set_accent(self._accent_hex)
+        self._bank_hint.set_accent(self._accent_hex)
 
     def _set_accent(self, accent_hex: str) -> None:
         self._accent_hex = accent_hex
@@ -293,6 +301,9 @@ class MainWindow(QMainWindow):
         indicator = self._bank_indicator
         indicator.move(dot.x() - indicator.width() - STATUS_DOT_MARGIN, dot.y() + (dot.height() - indicator.height()) // 2)
         indicator.raise_()
+        hint = self._bank_hint
+        hint.move((self.width() - hint.width()) // 2, STATUS_DOT_MARGIN)
+        hint.raise_()
 
     def _poll_midi(self) -> None:
         was_detected = self._midi_detected
@@ -304,6 +315,28 @@ class MainWindow(QMainWindow):
 
     def _on_control_activated(self, control: str) -> None:
         self._engine.trigger(control)
+
+    def _on_trigger(self, control: str, ok: bool) -> None:
+        QTimer.singleShot(0, lambda: self._apply_trigger_flash(control, ok))
+
+    def _apply_trigger_flash(self, control: str, ok: bool) -> None:
+        view = self._mini_view if self._mode == "mini" else self._expanded_view
+        view.flash_control(control, ok)
+
+    def _on_bank_b_pad(self) -> None:
+        QTimer.singleShot(0, self._bank_hint.show_hint)
+
+    def _on_decorative_button(self, control: str) -> None:
+        QMessageBox.information(
+            self, "설정 불가",
+            "이 버튼은 MIDI를 전송하지 않아 기능을 설정할 수 없습니다.",
+        )
+
+    def _on_knob_locked(self) -> None:
+        QMessageBox.information(
+            self, "설정 불가",
+            "1번 노브는 조이스틱 Y축과 같은 신호(CC1)라서 따로 설정할 수 없습니다.",
+        )
 
     def _on_bank_changed(self, bank_id: str) -> None:
         QTimer.singleShot(0, lambda: self._apply_bank_change(bank_id))
@@ -325,6 +358,8 @@ class MainWindow(QMainWindow):
             self._expanded_view.set_joystick_deflection(
                 self._joystick_values["joystick_x"], self._joystick_values["joystick_y"]
             )
+            if control == "joystick_y":
+                self._expanded_view.set_knob_value("knob_1", (value + 1.0) / 2.0)
             any_active = any(v != 0.0 for v in self._joystick_values.values())
             if any_active and not self._joystick_timer.isActive():
                 self._joystick_timer.start(JOYSTICK_TIMER_INTERVAL_MS)

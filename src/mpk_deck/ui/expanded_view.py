@@ -220,14 +220,26 @@ class KnobWidget(QFrame):
     Both use the same sweep (ui/knob_geometry.py's needle_angle): value 0.0 ->
     7 o'clock, value 1.0 -> 5 o'clock, clockwise through 12."""
 
+    configure_requested = Signal()
+    blocked_configure_requested = Signal()
+
     def __init__(self, label: str, parent=None) -> None:
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
         self._label = label
         self._value = 0.0
         self._style = "B"
         self._colors = _DARK
         self._accent_hex = ACCENT_HEX
+        self._locked = label == "1"  # knob 1 shares CC1 with the joystick Y axis
+
+    def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        if self._locked:
+            self.blocked_configure_requested.emit()
+        else:
+            self.configure_requested.emit()
+        super().mouseDoubleClickEvent(event)
 
     def set_value(self, value: float) -> None:
         self._value = max(0.0, min(1.0, value))
@@ -298,6 +310,7 @@ class ExpandedView(WindowGripMixin, QWidget):
     control_activated = Signal(str)
     control_configure_requested = Signal(str)
     decorative_button_activated = Signal(str)
+    knob_locked_activated = Signal()
 
     def __init__(self, dark: bool = False, parent=None) -> None:
         super().__init__(parent, aspect=ASPECT, min_width=BASE_WIDTH)
@@ -331,7 +344,10 @@ class ExpandedView(WindowGripMixin, QWidget):
 
         self._knobs: dict[str, KnobWidget] = {}
         for control in KNOB_LABELS_TOP + KNOB_LABELS_BOTTOM:
-            self._knobs[control] = KnobWidget(control.split("_")[1].upper(), self)
+            knob = KnobWidget(control.split("_")[1].upper(), self)
+            knob.configure_requested.connect(lambda c=control: self.control_configure_requested.emit(c))
+            knob.blocked_configure_requested.connect(self.knob_locked_activated.emit)
+            self._knobs[control] = knob
 
         # 25 keys (15 white + 10 black), C to C over 2 octaves + 1 — matches the physical keybed.
         self._keys: dict[int, _DebouncedKey] = {}

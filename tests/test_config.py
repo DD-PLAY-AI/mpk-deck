@@ -59,10 +59,10 @@ def test_load_last_accent_defaults_to_accent_hex(tmp_path):
 
 def test_save_and_load_last_knob_style_round_trip(tmp_path):
     ini_path = str(tmp_path / "settings.ini")
-    save_last_knob_style("B", ini_path=ini_path)
-    assert load_last_knob_style(ini_path=ini_path) == "B"
-
-
-def test_load_last_knob_style_defaults_to_a(tmp_path):
-    ini_path = str(tmp_path / "settings.ini")
+    save_last_knob_style("A", ini_path=ini_path)
     assert load_last_knob_style(ini_path=ini_path) == "A"
+
+
+def test_load_last_knob_style_defaults_to_needle(tmp_path):
+    ini_path = str(tmp_path / "settings.ini")
+    assert load_last_knob_style(ini_path=ini_path) == "B"

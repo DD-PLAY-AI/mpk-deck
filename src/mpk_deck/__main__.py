@@ -10,7 +10,6 @@ def main() -> None:
     load_dotenv()
     app = QApplication(sys.argv)
     window = MainWindow()
-    window.resize(680, 420)
     window.show()
     sys.exit(app.exec())
 

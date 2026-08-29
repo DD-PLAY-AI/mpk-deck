@@ -61,7 +61,7 @@ def save_last_accent(accent_hex: str, *, ini_path: str | None = None) -> None:
     settings.sync()
 
 
-def load_last_knob_style(default: str = "A", *, ini_path: str | None = None) -> str:
+def load_last_knob_style(default: str = "B", *, ini_path: str | None = None) -> str:
     settings = _get_settings(ini_path)
     return settings.value("ui/knob_style", default)
 

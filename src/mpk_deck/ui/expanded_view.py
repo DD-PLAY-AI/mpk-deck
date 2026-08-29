@@ -1,5 +1,5 @@
 from PySide6.QtCore import QPointF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPen
+from PySide6.QtGui import QColor, QFont, QPainter, QPen, QRadialGradient
 from PySide6.QtWidgets import QApplication, QFrame, QMenu, QPushButton, QWidget
 
 from mpk_deck.config import ACCENT_HEX, ACCENT_RGB
@@ -103,6 +103,15 @@ class _DebouncedKey(QFrame):
         super().mouseDoubleClickEvent(event)
 
 
+def _qcolor(spec: str) -> QColor:
+    """Parse 'rgba(r,g,b,a)' (0-255 alpha) or '#hex' into a QColor - the _LIGHT/_DARK
+    palette dicts store CSS-style strings QColor can't take directly."""
+    if spec.startswith("rgba("):
+        r, g, b, a = (int(float(x)) for x in spec[5:-1].split(","))
+        return QColor(r, g, b, a)
+    return QColor(spec)
+
+
 class JoystickWidget(QFrame):
     """Visual-only joystick indicator. Mouse drag previews the handle position but
     never triggers a scroll - the OS cursor sits on this widget while dragging, so a
@@ -110,52 +119,60 @@ class JoystickWidget(QFrame):
     is working in (see docs/superpowers/specs/2026-08-28-joystick-scroll-design.md).
     Real hardware input drives both the visual position (via set_deflection, called
     from MainWindow's on_continuous callback) and the actual scroll (via ActionEngine,
-    entirely outside this widget)."""
+    entirely outside this widget).
+
+    Socket + handle are painted with an antialiased QPainter (not a QSS border-radius,
+    which renders visibly blocky corners at this widget's small size)."""
 
     axis_configure_requested = Signal(str)  # "joystick_x" or "joystick_y"
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._handle = QFrame(self)
-        self._handle.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self._x = 0.0
         self._y = 0.0
+        self._fill = _DARK["fill"]
+        self._fill_hover = _DARK["fill_hover"]
+        self._accent_hex = ACCENT_HEX
 
     def set_deflection(self, x: float, y: float) -> None:
         self._x = max(-1.0, min(1.0, x))
         self._y = max(-1.0, min(1.0, y))
-        self._reposition_handle()
+        self.update()
 
     def apply_style(self, colors: dict[str, str], accent_hex: str, diameter: int) -> None:
+        self._fill = colors["fill"]
+        self._fill_hover = colors["fill_hover"]
+        self._accent_hex = accent_hex
         self.setFixedSize(diameter, diameter)
-        self.setStyleSheet(
-            f"QFrame {{ background: qradialgradient(cx:0.35, cy:0.3, radius:0.75, fx:0.35, fy:0.3, "
-            f"stop:0 {colors['fill_hover']}, stop:1 {colors['fill']}); "
-            f"border: 2px solid {accent_hex}; border-radius: {diameter // 2}px; }}"
-        )
-        hi = mix(accent_hex, (255, 255, 255), 0.45)
-        lo = mix(accent_hex, (0, 0, 0), 0.55)
-        self._handle.setStyleSheet(
-            f"QFrame {{ background: qradialgradient(cx:0.32, cy:0.28, radius:0.85, fx:0.32, fy:0.28, "
-            f"stop:0 {hi}, stop:0.55 {accent_hex}, stop:1 {lo}); "
-            f"border: 1px solid rgba(0,0,0,80); border-radius: 999px; }}"
-        )
-        self._reposition_handle()
+        self.update()
 
-    def resizeEvent(self, event) -> None:  # noqa: N802 (Qt override)
-        super().resizeEvent(event)
-        self._reposition_handle()
+    def paintEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        d = min(self.width(), self.height())
+        r = d / 2
 
-    def _reposition_handle(self) -> None:
-        base_r = self.width() / 2
-        handle_d = max(1, round(self.width() * 0.4))
-        handle_r = handle_d / 2
-        self._handle.setFixedSize(handle_d, handle_d)
-        cx = base_r + self._x * (base_r - handle_r) - handle_r
-        cy = base_r + self._y * (base_r - handle_r) - handle_r
-        self._handle.move(round(cx), round(cy))
+        socket = QRadialGradient(d * 0.35, d * 0.3, d * 0.75)
+        socket.setColorAt(0.0, _qcolor(self._fill_hover))
+        socket.setColorAt(1.0, _qcolor(self._fill))
+        painter.setBrush(socket)
+        painter.setPen(QPen(QColor(self._accent_hex), 2))
+        painter.drawEllipse(QPointF(r, r), r - 1, r - 1)
+
+        handle_d = d * 0.4
+        hr = handle_d / 2
+        cx = r + self._x * (r - hr)
+        cy = r + self._y * (r - hr)
+        orb = QRadialGradient(cx - handle_d * 0.18, cy - handle_d * 0.22, handle_d * 0.85)
+        orb.setColorAt(0.0, QColor(mix(self._accent_hex, (255, 255, 255), 0.45)))
+        orb.setColorAt(0.55, QColor(self._accent_hex))
+        orb.setColorAt(1.0, QColor(mix(self._accent_hex, (0, 0, 0), 0.55)))
+        painter.setBrush(orb)
+        painter.setPen(QPen(QColor(0, 0, 0, 80), 1))
+        painter.drawEllipse(QPointF(cx, cy), hr, hr)
+        painter.end()
 
     def mousePressEvent(self, event) -> None:  # noqa: N802 (Qt override)
         if event.button() == Qt.MouseButton.LeftButton:
@@ -205,7 +222,7 @@ class KnobWidget(QFrame):
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self._label = label
         self._value = 0.0
-        self._style = "A"
+        self._style = "B"
         self._colors = _DARK
         self._accent_hex = ACCENT_HEX
 
@@ -285,7 +302,7 @@ class ExpandedView(WindowGripMixin, QWidget):
         self.setMinimumSize(BASE_WIDTH, 284)  # keeps the 312:184 aspect ratio roughly intact
         self._dark = dark
         self._accent_hex = ACCENT_HEX
-        self._knob_style = "A"
+        self._knob_style = "B"
 
         self._joystick = JoystickWidget(self)
         self._joystick.axis_configure_requested.connect(self.control_configure_requested.emit)

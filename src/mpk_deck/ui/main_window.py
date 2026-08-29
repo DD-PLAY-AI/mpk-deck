@@ -41,6 +41,8 @@ logger = logging.getLogger(__name__)
 
 MIDI_POLL_INTERVAL_MS = 3000
 STATUS_DOT_MARGIN = 10
+MINI_DEFAULT_WIDTH = 320  # launch compact in mini mode - roughly the expanded view's pad cluster
+EXPANDED_DEFAULT_WIDTH = 680
 JOYSTICK_TIMER_INTERVAL_MS = 50  # 20Hz repeat-while-held; only runs while deflected
 
 
@@ -144,6 +146,8 @@ class MainWindow(QMainWindow):
         self._apply_theme()
         self._apply_always_on_top()
         self._apply_design()
+        self._mode_widths = {"mini": MINI_DEFAULT_WIDTH, "expanded": EXPANDED_DEFAULT_WIDTH}
+        QTimer.singleShot(0, self._resize_for_mode)
 
         self._tray = self._build_tray()
         self._position_overlay_widgets()
@@ -222,6 +226,16 @@ class MainWindow(QMainWindow):
             self.resize(self.width(), target_h)
             self._resizing_guard = False
 
+    def _resize_for_mode(self) -> None:
+        """Each mode keeps its own window width (default until the user resizes it),
+        so toggling mini<->expanded snaps back to a sensible size instead of carrying
+        the other mode's width over. Deferred so the just-toggled view visibility has
+        settled the layout's minimum size first - otherwise mini can't shrink past
+        ExpandedView's minimum width."""
+        active = self._mini_view if self._mode == "mini" else self._expanded_view
+        width = self._mode_widths[self._mode]
+        self.resize(width, round(width / active.locked_aspect))
+
     def _apply_theme(self) -> None:
         dark = self._theme == "dark"
         self._mini_view.set_dark(dark)
@@ -244,9 +258,11 @@ class MainWindow(QMainWindow):
         self._apply_design()
 
     def _toggle_mode(self) -> None:
+        self._mode_widths[self._mode] = self.width()
         self._mode = "expanded" if self._mode == "mini" else "mini"
         save_last_mode(self._mode)
         self._apply_mode()
+        QTimer.singleShot(0, self._resize_for_mode)
 
     def _set_theme(self, theme: str) -> None:
         self._theme = theme

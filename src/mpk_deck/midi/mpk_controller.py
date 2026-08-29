@@ -32,13 +32,24 @@ class MPKController:
             if log:
                 logger.warning("MPK mini MK2 not found among MIDI inputs")
             return False
-        self._port = mido.open_input(name, callback=self._on_message)
+        try:
+            self._port = mido.open_input(name, callback=self._on_message)
+        except Exception:
+            if log:
+                logger.warning("failed to open MIDI port %s", name, exc_info=True)
+            self._port = None
+            return False
         logger.info("listening on MIDI port %s", name)
         return True
 
     def stop(self) -> None:
         if self._port is not None:
-            self._port.close()
+            try:
+                self._port.close()
+            except Exception:
+                # rtmidi raises (e.g. midiInUnprepareHeader) when the device was
+                # physically unplugged before close(); the port is dead either way.
+                logger.debug("error closing MIDI port; treating as closed", exc_info=True)
             self._port = None
 
     def poll_connection(self) -> bool:

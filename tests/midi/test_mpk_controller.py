@@ -96,3 +96,41 @@ def test_poll_connection_disconnects_when_device_disappears(monkeypatch):
     monkeypatch.setattr(mido, "get_input_names", lambda: [])
     assert controller.poll_connection() is False
     assert port.closed is True
+
+
+class _RaisingClosePort:
+    """Mimics rtmidi throwing from close() when the device was already unplugged."""
+
+    def close(self) -> None:
+        raise RuntimeError("MidiInWinMM::openPort: error closing Windows MM MIDI input port")
+
+
+def test_stop_swallows_close_error():
+    controller = MPKController(action_engine=ActionEngine())
+    controller._port = _RaisingClosePort()
+
+    controller.stop()  # must not raise
+
+    assert controller._port is None
+
+
+def test_poll_connection_survives_close_error_on_disconnect(monkeypatch):
+    monkeypatch.setattr(mido, "get_input_names", lambda: ["MPK mini mk II 1"])
+    monkeypatch.setattr(mido, "open_input", lambda name, callback: _RaisingClosePort())
+    controller = MPKController(action_engine=ActionEngine())
+    controller.poll_connection()
+
+    monkeypatch.setattr(mido, "get_input_names", lambda: [])
+    assert controller.poll_connection() is False  # must not raise
+    assert controller._port is None
+
+
+def test_start_returns_false_when_open_input_raises(monkeypatch):
+    monkeypatch.setattr(mido, "get_input_names", lambda: ["MPK mini mk II 1"])
+    monkeypatch.setattr(
+        mido, "open_input", lambda name, callback: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
+    controller = MPKController(action_engine=ActionEngine())
+
+    assert controller.start(log=False) is False
+    assert controller._port is None

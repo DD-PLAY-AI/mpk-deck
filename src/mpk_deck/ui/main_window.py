@@ -18,7 +18,6 @@ from mpk_deck.config import (
     save_last_mode,
     save_last_theme,
 )
-from mpk_deck.ui.accent import ACCENT_CHOICES
 from mpk_deck.core.action_engine import ActionEngine
 from mpk_deck.core.action_registry import (
     Bank,
@@ -31,6 +30,7 @@ from mpk_deck.core.action_registry import (
 )
 from mpk_deck.core.handlers import focus_window, launch_program, open_url, scroll_horizontal, scroll_vertical, set_system_volume
 from mpk_deck.midi.mpk_controller import MPKController
+from mpk_deck.ui.accent import ACCENT_CHOICES
 from mpk_deck.ui.action_config_dialog import ActionConfigDialog
 from mpk_deck.ui.bank_indicator import BankIndicator
 from mpk_deck.ui.expanded_view import ExpandedView

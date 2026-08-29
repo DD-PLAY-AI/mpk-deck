@@ -16,7 +16,11 @@ tool-forced 구조화 출력으로만 호출하고, 절대 자동 실행/저장�
   `register_trigger`/`register_continuous`로 액션 이름 -> 핸들러 함수를
   등록하고, `load_banks(banks: dict[str, list[Binding]], switch_bindings:
   dict[str, str], active_bank: str)`로 뱅크별 바인딩을 적재한다. 생성자에
-  선택적 `on_bank_changed: Callable[[str], None]` 콜백을 받고, `switch_bank
+  선택적 `on_bank_changed: Callable[[str], None]` 콜백과 `on_continuous:
+  Callable[[str, float], None]` 콜백(둘 다 옵션)을 받는다. `on_continuous`는
+  `set_continuous()`가 호출될 때마다 바인딩 존재 여부와 무관하게 무조건
+  발화 — UI가 하드웨어 입력을 시각적으로 미러링(조이스틱 손잡이, 노브
+  바늘)할 수 있게 해주는 용도, 실제 액션 디스패치와는 별개 경로. `switch_bank
   (bank_id)` 메서드와 `active_bank` 프로퍼티를 노출. `trigger()`가
   `switch_bank` 액션을 직접 인식해서 `self.switch_bank(...)`를 호출 —
   `switch_bank`는 `handlers.py`에 등록되는 일반 핸들러가 아니라 엔진 내재
@@ -29,7 +33,9 @@ tool-forced 구조화 출력으로만 호출하고, 절대 자동 실행/저장�
   에러, 구조가 잘못된 경우 모두 단일 뱅크 기본 설정으로 폴백. 잘못된
   개별 바인딩은 로그 후 skip. `ActionConfigError`는 더 이상 없음.
 - `core/handlers.py`: 실제 side-effect 핸들러 (`launch_program`,
-  `open_url`, `focus_window`, `set_system_volume`). 트리거 핸들러는
+  `open_url`, `focus_window`, `set_system_volume`, `scroll_horizontal`/
+  `scroll_vertical` — 진짜 `win32api.mouse_event` 휠 주입, 합성
+  `PostMessage` 아님). 트리거 핸들러는
   `(params: dict) -> None`, continuous 핸들러는
   `(params: dict, value: float) -> None` 시그니처를 따른다. Windows 전용
   의존성(`win32gui`, `pycaw`)은 함수 내부에서 지연 import — 모듈 로드
@@ -38,10 +44,13 @@ tool-forced 구조화 출력으로만 호출하고, 절대 자동 실행/저장�
   목록 제공 (프로그램 런처 UI용).
 - MIDI 흐름: `midi/mpk_controller.py`의 `MPKController`가 `mido`로 MPK
   mini MK2 포트를 열고 콜백 기반으로 리슨 (폴링 없음) -> 각 메시지를
-  `midi/translator.py`의 `translate()`(순수 함수, MIDI note/CC ->
+  `midi/translator.py`의 `translate()`(순수 함수, MIDI note/CC/pitchwheel ->
   `ControlEvent`)로 변환 -> `ActionEngine.trigger`/`set_continuous` 호출.
   팩토리 기본 매핑: 패드 note 36-43 -> `pad_1`..`pad_8`, 노브 CC 1-8 ->
-  `knob_1`..`knob_8`.
+  `knob_1`..`knob_8`, `pitchwheel` -> `joystick_x`, CC `JOYSTICK_Y_CC`(=1,
+  잠정치) -> `joystick_y`(둘 다 -1.0..1.0, 노브의 0.0..1.0과 다른 범위) —
+  `JOYSTICK_Y_CC` 체크가 `KNOB_CC_TO_CONTROL`보다 먼저라 실기에서 겹치면
+  조이스틱이 이김(`knob_1`이 그 CC로 도달 불가해짐, 의도적).
 - `config/actions.yaml`이 바인딩의 source of truth, 뱅크 인식 구조로
   확장됨. 손으로 수정하거나 `ui/action_config_dialog.py`의 GUI로 수정 —
   둘 다 같은 `load_config`/`save_config`를 거친다.
@@ -283,9 +292,30 @@ UI, Action Config Dialog, `core/nl_action.py`). pytest 전체 통과.
    Bank 플로우 실제 클릭, 잠금 확인, 뱅크 표시 실시간 갱신, 재시작 후
    유지)은 서브에이전트가 마우스/스크린샷 도구가 없어서 검증 못 함 —
    사용자 라이브 확인 필요.**
-3. **C. 조이스틱 기본 스크롤 + UI 실제 움직임** — 조이스틱을 기본으로
-   가로/세로 스크롤 액션에 매핑, ExpandedView 조이스틱이 실제 밀리는 것처럼
-   시각적으로도 움직이게.
+3. ~~**C. 조이스틱 기본 스크롤 + UI 실제 움직임**~~ — **완료, 2026-08-28.**
+   `midi/translator.py`가 `pitchwheel`(X축)과 새 `JOYSTICK_Y_CC=1`(Y축,
+   `KNOB_CC_TO_CONTROL`보다 먼저 체크 — CC1이 실제로 겹치면 조이스틱이
+   이김, `knob_1`은 그 CC로 도달 불가해짐, 의도적 선택)을 `joystick_x`/
+   `joystick_y` continuous 컨트롤로 디코딩. `ActionEngine`에 `on_continuous`
+   콜백 추가(바인딩 여부 무관하게 항상 발화 — 나중에 시각 미러링용).
+   `core/handlers.py`의 `scroll_horizontal`/`scroll_vertical`이 진짜
+   `win32api.mouse_event` 휠 주입(합성 `PostMessage` 아님 — Chrome류가
+   무시하는 거 피함). 마우스로 조이스틱을 드래그하면 `JoystickWidget`
+   손잡이만 움직이고 절대 `ActionEngine`을 안 건드림(커서가 mpk-deck
+   자기 창 위에 있어서 실제 스크롤을 부르면 자기 자신이 스크롤됨) —
+   실제 스크롤은 하드웨어 입력에서만. `MainWindow`가 20Hz 반복 타이머로
+   "누르고 있으면 계속 스크롤" 구현(꺾인 축이 있을 때만 돌고 유휴 시
+   0). 새 뱅크는 전부 `joystick_x`/`joystick_y`가 기본으로
+   `scroll_horizontal`/`scroll_vertical`에 바인딩된 채로 시작(기존 뱅크도
+   `load_config`가 없는 것만 채워넣음, 비파괴적). `subagent-driven-
+   development`로 8개 태스크 실행(스펙: `docs/superpowers/specs/
+   2026-08-28-joystick-scroll-design.md`, 계획: `docs/superpowers/plans/
+   2026-08-28-joystick-scroll.md`), 148/148 테스트 통과. **Task 8(MainWindow
+   배선)의 태스크 리뷰는 사용자 요청으로 서브에이전트 디스패치 없이
+   완료 처리 — 사용자가 직접 라이브로 검증할 예정.** 아직 실기로 확인
+   안 된 것(스펙의 Open Questions): 진짜 `JOYSTICK_Y_CC` 값과 `knob_1`
+   충돌 여부, `SendInput` 기반 스크롤이 실제 앱(Chrome/카카오톡 등)에서
+   먹히는지.
 
 **애드혹 삽입 — 디자인 설정(accent 색 + 노브 스타일), 2026-08-29, A-F
 목록에는 없던 항목**: C의 라이브 테스트 도중 발견한 실제 버그 두 개

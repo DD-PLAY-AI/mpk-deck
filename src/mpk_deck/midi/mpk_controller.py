@@ -7,6 +7,15 @@ from mpk_deck.midi.translator import translate
 
 logger = logging.getLogger(__name__)
 
+# Ports whose device vanished while still open. Closing an rtmidi WinMM port after
+# the device is physically unplugged crashes the process at the C level
+# (midiInClose / midiInUnprepareHeader), past any Python-level guard - so we drop
+# the reference here and never touch it again (keeping it referenced also stops
+# __dealloc__ from running the same doomed close). Bounded leak: one dead port per
+# unplug per process.
+# ponytail: per-session leak on hot-unplug; only matters if something unplugs hundreds of times.
+_ABANDONED_PORTS: list = []
+
 
 class MPKController:
     def __init__(self, action_engine: ActionEngine, port_name_contains: str = "MPK mini") -> None:
@@ -56,13 +65,25 @@ class MPKController:
         logger.warning("MIDI backend error (%s): %s", error_type, message)
 
     def stop(self) -> None:
+        if self._port is None:
+            return
+        if self.find_port_name(log=False) is None:
+            # Device already gone - closing it would crash the process (see
+            # _ABANDONED_PORTS). Drop it without touching the C layer.
+            self._abandon_port()
+            return
+        try:
+            self._port.close()
+        except Exception:
+            logger.debug("error closing MIDI port; abandoning it", exc_info=True)
+            _ABANDONED_PORTS.append(self._port)
+        self._port = None
+
+    def _abandon_port(self) -> None:
+        """Drop a port whose device physically disappeared, without closing it
+        (see _ABANDONED_PORTS). A fresh port is opened on the next reconnect."""
         if self._port is not None:
-            try:
-                self._port.close()
-            except Exception:
-                # rtmidi raises (e.g. midiInUnprepareHeader) when the device was
-                # physically unplugged before close(); the port is dead either way.
-                logger.debug("error closing MIDI port; treating as closed", exc_info=True)
+            _ABANDONED_PORTS.append(self._port)
             self._port = None
 
     def poll_connection(self) -> bool:
@@ -74,7 +95,7 @@ class MPKController:
         """
         if self._port is not None:
             if self.find_port_name(log=False) is None:
-                self.stop()
+                self._abandon_port()
             return self._port is not None
         return self.start(log=False)
 

@@ -1,8 +1,16 @@
 import mido
+import pytest
 
 from mpk_deck.core.action_engine import ActionEngine
 from mpk_deck.midi import mpk_controller
 from mpk_deck.midi.mpk_controller import MPKController
+
+
+@pytest.fixture(autouse=True)
+def _clear_abandoned_ports():
+    mpk_controller._ABANDONED_PORTS.clear()
+    yield
+    mpk_controller._ABANDONED_PORTS.clear()
 
 
 def test_find_port_name_matches_substring(monkeypatch):
@@ -160,7 +168,7 @@ def test_poll_connection_stays_connected_without_reopening(monkeypatch):
     assert len(open_count) == 1
 
 
-def test_poll_connection_disconnects_when_device_disappears(monkeypatch):
+def test_poll_connection_abandons_vanished_port_without_closing_it(monkeypatch):
     monkeypatch.setattr(mido, "get_input_names", lambda: ["MPK mini mk II 1"])
     monkeypatch.setattr(mido, "open_input", lambda name, callback: _FakePort())
     controller = MPKController(action_engine=ActionEngine())
@@ -169,33 +177,55 @@ def test_poll_connection_disconnects_when_device_disappears(monkeypatch):
 
     monkeypatch.setattr(mido, "get_input_names", lambda: [])
     assert controller.poll_connection() is False
-    assert port.closed is True
+    assert controller._port is None
+    # closing a vanished rtmidi WinMM port crashes the process, so it must NOT be closed
+    assert port.closed is False
+    assert port in mpk_controller._ABANDONED_PORTS
 
 
 class _RaisingClosePort:
-    """Mimics rtmidi throwing from close() when the device was already unplugged."""
+    """Mimics rtmidi crashing/raising from close() when the device is already gone."""
+
+    def __init__(self) -> None:
+        self.closed = False
 
     def close(self) -> None:
         raise RuntimeError("MidiInWinMM::openPort: error closing Windows MM MIDI input port")
 
 
-def test_stop_swallows_close_error():
+def test_stop_does_not_close_a_port_whose_device_is_gone(monkeypatch):
+    monkeypatch.setattr(mido, "get_input_names", lambda: [])
     controller = MPKController(action_engine=ActionEngine())
-    controller._port = _RaisingClosePort()
+    port = _RaisingClosePort()
+    controller._port = port
 
-    controller.stop()  # must not raise
+    controller.stop()  # must not raise, must not call close()
 
     assert controller._port is None
+    assert port in mpk_controller._ABANDONED_PORTS
 
 
-def test_poll_connection_survives_close_error_on_disconnect(monkeypatch):
+def test_stop_closes_the_port_normally_when_device_is_still_present(monkeypatch):
+    monkeypatch.setattr(mido, "get_input_names", lambda: ["MPK mini mk II 1"])
+    controller = MPKController(action_engine=ActionEngine())
+    port = _FakePort()
+    controller._port = port
+
+    controller.stop()
+
+    assert port.closed is True
+    assert controller._port is None
+    assert port not in mpk_controller._ABANDONED_PORTS
+
+
+def test_poll_connection_survives_disconnect_when_close_would_raise(monkeypatch):
     monkeypatch.setattr(mido, "get_input_names", lambda: ["MPK mini mk II 1"])
     monkeypatch.setattr(mido, "open_input", lambda name, callback: _RaisingClosePort())
     controller = MPKController(action_engine=ActionEngine())
     controller.poll_connection()
 
     monkeypatch.setattr(mido, "get_input_names", lambda: [])
-    assert controller.poll_connection() is False  # must not raise
+    assert controller.poll_connection() is False  # must not raise (close() never called)
     assert controller._port is None
 
 

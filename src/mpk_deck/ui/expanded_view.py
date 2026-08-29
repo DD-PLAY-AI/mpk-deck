@@ -1,6 +1,6 @@
 from PySide6.QtCore import QPointF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPen, QRadialGradient
-from PySide6.QtWidgets import QApplication, QFrame, QMenu, QPushButton, QWidget
+from PySide6.QtWidgets import QApplication, QFrame, QGraphicsDropShadowEffect, QMenu, QPushButton, QWidget
 
 from mpk_deck.config import ACCENT_HEX, ACCENT_RGB
 from mpk_deck.ui.accent import hex_to_rgb_str, mix
@@ -94,6 +94,14 @@ class _DebouncedKey(QFrame):
         self._click_timer = QTimer(self)
         self._click_timer.setSingleShot(True)
         self._click_timer.timeout.connect(self.activated.emit)
+        self._glow = QGraphicsDropShadowEffect(self)
+        self._glow.setBlurRadius(16)
+        self._glow.setOffset(0, 0)
+        self._glow.setEnabled(False)
+        self.setGraphicsEffect(self._glow)
+        self._flash_timer = QTimer(self)
+        self._flash_timer.setSingleShot(True)
+        self._flash_timer.timeout.connect(lambda: self._glow.setEnabled(False))
 
     def mousePressEvent(self, event) -> None:  # noqa: N802 (Qt override)
         if event.button() == Qt.MouseButton.LeftButton:
@@ -104,6 +112,11 @@ class _DebouncedKey(QFrame):
         self._click_timer.stop()
         self.configure_requested.emit()
         super().mouseDoubleClickEvent(event)
+
+    def flash(self, ok: bool) -> None:
+        self._glow.setColor(QColor(0, 200, 90) if ok else QColor(220, 60, 60))
+        self._glow.setEnabled(True)
+        self._flash_timer.start(200)
 
 
 def _qcolor(spec: str) -> QColor:
@@ -396,6 +409,16 @@ class ExpandedView(WindowGripMixin, QWidget):
         knob = self._knobs.get(control)
         if knob is not None:
             knob.set_value(value)
+
+    def flash_control(self, control: str, ok: bool) -> None:
+        pad = self._pads.get(control)
+        if pad is not None:
+            pad.flash(ok)
+            return
+        if control.startswith("key_"):
+            key = self._keys.get(int(control[4:]))
+            if key is not None:
+                key.flash(ok)
 
     def resizeEvent(self, event) -> None:  # noqa: N802 (Qt override)
         super().resizeEvent(event)

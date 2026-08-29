@@ -245,7 +245,7 @@ class KnobWidget(QFrame):
         self._style = "B"
         self._colors = _DARK
         self._accent_hex = ACCENT_HEX
-        self._locked = label == "1"  # knob 1 shares CC1 with the joystick Y axis
+        self._locked = label == "1"
 
     def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802 (Qt override)
         if self._locked:
@@ -269,10 +269,17 @@ class KnobWidget(QFrame):
         font.setPixelSize(max(1, round(font_px)))
         font.setWeight(QFont.Weight.Bold)  # matches the old QLabel knob styling's font-weight: 700
         self.setFont(font)
-        accent_rgb = hex_to_rgb_str(accent_hex)
+        accent_rgb = "128,128,128" if self._locked else hex_to_rgb_str(accent_hex)
+        background = (
+            "rgba(128,128,128,70)"
+            if self._locked
+            else (
+                "qradialgradient(cx:0.35, cy:0.3, radius:0.75, fx:0.35, fy:0.3, "
+                f"stop:0 {colors['fill_hover']}, stop:1 {colors['fill']})"
+            )
+        )
         self.setStyleSheet(
-            f"QFrame {{ background: qradialgradient(cx:0.35, cy:0.3, radius:0.75, fx:0.35, fy:0.3, "
-            f"stop:0 {colors['fill_hover']}, stop:1 {colors['fill']}); "
+            f"QFrame {{ background: {background}; "
             f"border: 2px solid rgba({accent_rgb},170); border-radius: {diameter // 2}px; }}"
         )
         self.update()
@@ -283,7 +290,7 @@ class KnobWidget(QFrame):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         d = self.width()
         r = d / 2
-        accent = QColor(self._accent_hex)
+        accent = QColor("#808080") if self._locked else QColor(self._accent_hex)
 
         if self._style == "A":
             painter.setPen(QColor(self._colors["text"]))

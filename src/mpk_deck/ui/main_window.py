@@ -138,7 +138,6 @@ class MainWindow(QMainWindow):
         self._expanded_view.control_configure_requested.connect(self._on_control_configure_requested)
         self._expanded_view.decorative_button_activated.connect(self._on_decorative_button)
         self._expanded_view.knob_locked_activated.connect(self._on_knob_locked)
-        self._expanded_view.set_knob_value("knob_1", 0.5)
 
         container = QWidget(self)
         layout = QVBoxLayout(container)
@@ -340,7 +339,7 @@ class MainWindow(QMainWindow):
     def _on_knob_locked(self) -> None:
         QMessageBox.information(
             self, "설정 불가",
-            "1번 노브는 조이스틱 Y축과 같은 신호(CC1)라서 따로 설정할 수 없습니다.",
+            "1번 노브는 사용할 수 없습니다.",
         )
 
     def _on_bank_changed(self, bank_id: str) -> None:
@@ -363,8 +362,6 @@ class MainWindow(QMainWindow):
             self._expanded_view.set_joystick_deflection(
                 self._joystick_values["joystick_x"], self._joystick_values["joystick_y"]
             )
-            if control == "joystick_y":
-                self._expanded_view.set_knob_value("knob_1", (value + 1.0) / 2.0)
             any_active = any(v != 0.0 for v in self._joystick_values.values())
             if any_active and not self._joystick_timer.isActive():
                 self._joystick_timer.start(JOYSTICK_TIMER_INTERVAL_MS)

@@ -39,9 +39,9 @@ Device sends on MIDI channel 0. Factory mapping:
 
 Consequences:
 
-1. **Knob 1 is not independently usable** — its CC1 is the joystick Y
-   axis. Accepted: CC1 is treated as `joystick_y` only; knob 1 mirrors it
-   in the UI and cannot be configured.
+1. **Knob 1 is disabled** — CC1 is treated as `joystick_y` only; knob 1 has
+   no MIDI mapping, renders grey, and shows an unavailable message on
+   double-click.
 2. **Pads must be kept on Bank A.** Bank A pad notes (36–43) do not
    overlap the keybed (48–72). Bank B pad notes (44–51) overlap the
    keybed's bottom four keys (48–51) and are indistinguishable from them
@@ -141,12 +141,10 @@ catches. No handler signature change.
      inside the widget. Plan step decides; keep it one message, no dialog
      chrome beyond `QMessageBox`.)
 
-2. **Knob 1 widget mirrors joystick Y.** `KnobWidget` for `knob_1`:
-   - `MainWindow`'s continuous mirror already routes `knob_*` values;
-     additionally route `joystick_y` value into `knob_1`'s `set_value`
-     (remap −1…1 → 0…1 for the dial).
+2. **Knob 1 widget is disabled.** `KnobWidget` for `knob_1`:
+   - Render it muted grey and do not mirror `joystick_y` values into it.
    - Double-click on `knob_1` must not open `ActionConfigDialog`. It shows:
-     *"1번 노브는 조이스틱 Y축과 같은 신호(CC1)라서 따로 설정할 수 없습니다."*
+     *"1번 노브는 사용할 수 없습니다."*
    - Other knobs (2–8) keep normal configure-on-double-click.
 
 3. **Trigger flash.** Pads (`PadButton` reused from `mini_view.py`) and
@@ -176,8 +174,8 @@ catches. No handler signature change.
   visible view, call `flash(ok)`.
 - Pass `on_bank_b_pad=self._on_bank_b_pad` into `MPKController` (new
   constructor kwarg) → show the banner.
-- Route `joystick_y` continuous value into the `knob_1` widget in addition
-  to the joystick widget (extend `_apply_joystick_continuous`).
+- Keep `joystick_y` continuous values routed only to the joystick widget;
+  `knob_1` remains disabled.
 
 ### `midi/mpk_controller.py`
 

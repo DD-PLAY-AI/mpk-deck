@@ -54,9 +54,8 @@ tool-forced 구조화 출력으로만 호출하고, 절대 자동 실행/저장�
   -> `pad_1`..`pad_8`, 건반 note 48-72 -> `key_0`..`key_24`(`note-48`,
   `KEYBED_BASE_NOTE`/`KEYBED_KEY_COUNT` 상수), 노브 CC 2-8 -> `knob_2`..
   `knob_8`, `pitchwheel` -> `joystick_x`, CC 1 -> `joystick_y`. **knob_1은
-  MIDI 매핑 없음** — CC 1을 조이스틱 Y와 공유하고 `JOYSTICK_Y_CC` 체크가
-  `KNOB_CC_TO_CONTROL`보다 먼저라 조이스틱이 이김(의도적, knob_1은 UI에서
-  joystick_y를 미러링). 건반 범위 밖(옥타브 시프트) 노트와 그 외 note/CC는
+  MIDI 매핑 없음** — 비활성(회색)이며, 더블클릭 시 "사용할 수 없습니다" 안내를
+  표시. 건반 범위 밖(옥타브 시프트) 노트와 그 외 note/CC는
   `None`으로 drop. `translate()` 외에 `is_bank_b_pad_note(message)` 순수
   함수 — note_on 44-47(Bank B 패드, 건반과 안 겹치는 범위)이면 True.
   `MPKController` 생성자의 `on_bank_b_pad` 콜백이 이걸로 발화 -> MainWindow가
@@ -167,7 +166,7 @@ tool-forced 구조화 출력으로만 호출하고, 절대 자동 실행/저장�
   `configure_requested`/`blocked_configure_requested` 시그널. knob 2~8은
   `ExpandedView.control_configure_requested`로 이어지고, knob_1(label `"1"`,
   `_locked=True`)은 `ExpandedView.knob_locked_activated`로 이어져 MainWindow가
-  "조이스틱 Y축과 같은 신호라 설정 불가" 안내. `PadButton`과 `_DebouncedKey`에
+  "사용할 수 없습니다" 안내. knob_1은 비활성(회색)으로 표시. `PadButton`과 `_DebouncedKey`에
   `flash(ok: bool)` 추가(재사용 `QTimer`로 ~200ms 초록/빨강 글로우) —
   `MiniView.flash_control(control, ok)` / `ExpandedView.flash_control(control, ok)`가
   MainWindow의 `on_trigger` 콜백에서 호출됨.
@@ -377,9 +376,9 @@ Artifact로 게시)으로 디자인을 다시 잡는 쪽으로 커졌고, 최종
    얹으면 됨 — 재스코프 필요.
 6. ~~**F. 실제 MPK mini MK2 하드웨어 신호 연동**~~ — **완료, 2026-08-29.**
    실기 캡처(`scratchpad/midi_monitor.py`)로 팩토리 MIDI 맵 확정 후 에디터
-   변경 없이 연동. 최종 매핑: `pitchwheel`→`joystick_x`, `CC1`→`joystick_y`
-   (knob_1도 같은 CC1 — 조이스틱이 이김, knob_1은 MIDI 매핑 없음 + UI에서
-   joystick_y 미러), `CC2~8`→`knob_2~8`, `note 36~43`→`pad_1~8`(패드는 사용자가
+   변경 없이 연동. 최종 매핑: `pitchwheel`→`joystick_x`, `CC1`→`joystick_y`,
+   `knob_1`은 MIDI 매핑 없는 비활성(회색) 노브이며 더블클릭 시 "사용할 수 없습니다" 안내,
+   `CC2~8`→`knob_2~8`, `note 36~43`→`pad_1~8`(패드는 사용자가
    Bank A 유지), `note 48~72`→`key_0~24`(`note-48`), `note 44~47`→이벤트 없음 +
    "Bank B → Bank A 전환" 배너. 함수 버튼 10개(OCT/ARP/TAP/FULL/RPT/CC/
    CHG/SEL/BANK 등)는 MIDI를 전혀 안 보냄 → `ExpandedView`에서 비활성 스타일 +

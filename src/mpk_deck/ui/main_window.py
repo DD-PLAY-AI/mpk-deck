@@ -1,19 +1,24 @@
 import logging
 
 from PySide6.QtCore import QRectF, Qt, QTimer
-from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
+from PySide6.QtGui import QActionGroup, QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication, QMainWindow, QMenu, QSystemTrayIcon, QVBoxLayout, QWidget
 
 from mpk_deck.config import (
     ACCENT_HEX,
     DEFAULT_ACTIONS_PATH,
+    load_last_accent,
     load_last_always_on_top,
+    load_last_knob_style,
     load_last_mode,
     load_last_theme,
+    save_last_accent,
     save_last_always_on_top,
+    save_last_knob_style,
     save_last_mode,
     save_last_theme,
 )
+from mpk_deck.ui.accent import ACCENT_CHOICES
 from mpk_deck.core.action_engine import ActionEngine
 from mpk_deck.core.action_registry import (
     Bank,
@@ -72,6 +77,19 @@ def _tray_icon() -> QIcon:
     return QIcon(pixmap)
 
 
+def _accent_icon(hex_color: str) -> QIcon:
+    """A small solid-color circle, shown next to each accent choice in the Design menu."""
+    pixmap = QPixmap(16, 16)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QColor(hex_color))
+    painter.drawEllipse(1, 1, 14, 14)
+    painter.end()
+    return QIcon(pixmap)
+
+
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -85,6 +103,8 @@ class MainWindow(QMainWindow):
         self._engine = build_action_engine(self._config, self._on_bank_changed, self._on_joystick_continuous)
         self._bindings: dict[str, Binding] = dict(self._engine.bindings)
         self._resizing_guard = False
+        self._accent_hex = load_last_accent()
+        self._knob_style = load_last_knob_style()
 
         self._joystick_timer = QTimer(self)
         self._joystick_timer.timeout.connect(self._on_joystick_timer_tick)
@@ -123,6 +143,7 @@ class MainWindow(QMainWindow):
         self._apply_mode()
         self._apply_theme()
         self._apply_always_on_top()
+        self._apply_design()
 
         self._tray = self._build_tray()
         self._position_overlay_widgets()
@@ -152,6 +173,24 @@ class MainWindow(QMainWindow):
         always_on_top_action.setChecked(self._always_on_top)
         always_on_top_action.triggered.connect(self._toggle_always_on_top)
         self._always_on_top_action = always_on_top_action
+
+        menu.addSeparator()
+        design_menu = menu.addMenu("Design")
+        knob_style_group = QActionGroup(design_menu)
+        for style, label in [("A", "Knob: Number + Tick"), ("B", "Knob: Needle")]:
+            action = design_menu.addAction(label)
+            action.setCheckable(True)
+            action.setActionGroup(knob_style_group)
+            action.setChecked(style == self._knob_style)
+            action.triggered.connect(lambda checked, s=style: self._set_knob_style(s))
+        design_menu.addSeparator()
+        accent_group = QActionGroup(design_menu)
+        for name, hex_color in ACCENT_CHOICES:
+            action = design_menu.addAction(_accent_icon(hex_color), name.capitalize())
+            action.setCheckable(True)
+            action.setActionGroup(accent_group)
+            action.setChecked(hex_color == self._accent_hex)
+            action.triggered.connect(lambda checked, h=hex_color: self._set_accent(h))
 
         menu.addSeparator()
         quit_action = menu.addAction("Quit")
@@ -187,7 +226,22 @@ class MainWindow(QMainWindow):
         dark = self._theme == "dark"
         self._mini_view.set_dark(dark)
         self._expanded_view.set_dark(dark)
-        self._bank_indicator.set_dark(dark)
+
+    def _apply_design(self) -> None:
+        self._mini_view.set_accent(self._accent_hex)
+        self._expanded_view.set_accent(self._accent_hex)
+        self._expanded_view.set_knob_style(self._knob_style)
+        self._bank_indicator.set_accent(self._accent_hex)
+
+    def _set_accent(self, accent_hex: str) -> None:
+        self._accent_hex = accent_hex
+        save_last_accent(accent_hex)
+        self._apply_design()
+
+    def _set_knob_style(self, style: str) -> None:
+        self._knob_style = style
+        save_last_knob_style(style)
+        self._apply_design()
 
     def _toggle_mode(self) -> None:
         self._mode = "expanded" if self._mode == "mini" else "mini"
@@ -250,17 +304,18 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(0, lambda: self._apply_joystick_continuous(control, value))
 
     def _apply_joystick_continuous(self, control: str, value: float) -> None:
-        if control not in self._joystick_values:
-            return
-        self._joystick_values[control] = value
-        self._expanded_view.set_joystick_deflection(
-            self._joystick_values["joystick_x"], self._joystick_values["joystick_y"]
-        )
-        any_active = any(v != 0.0 for v in self._joystick_values.values())
-        if any_active and not self._joystick_timer.isActive():
-            self._joystick_timer.start(JOYSTICK_TIMER_INTERVAL_MS)
-        elif not any_active and self._joystick_timer.isActive():
-            self._joystick_timer.stop()
+        if control in self._joystick_values:
+            self._joystick_values[control] = value
+            self._expanded_view.set_joystick_deflection(
+                self._joystick_values["joystick_x"], self._joystick_values["joystick_y"]
+            )
+            any_active = any(v != 0.0 for v in self._joystick_values.values())
+            if any_active and not self._joystick_timer.isActive():
+                self._joystick_timer.start(JOYSTICK_TIMER_INTERVAL_MS)
+            elif not any_active and self._joystick_timer.isActive():
+                self._joystick_timer.stop()
+        elif control.startswith("knob_"):
+            self._expanded_view.set_knob_value(control, value)
 
     def _on_joystick_timer_tick(self) -> None:
         for control, value in self._joystick_values.items():
@@ -269,7 +324,7 @@ class MainWindow(QMainWindow):
 
     def _on_control_configure_requested(self, control: str) -> None:
         existing = self._bindings.get(control)
-        dialog = ActionConfigDialog(control, existing, parent=self, bank_names=self._bank_names)
+        dialog = ActionConfigDialog(control, existing, parent=self, bank_names=self._bank_names, accent_hex=self._accent_hex)
         if not dialog.exec():
             return
         if control in self._config.switch_bindings:

@@ -124,12 +124,23 @@ tool-forced 구조화 출력으로만 호출하고, 절대 자동 실행/저장�
   doubleClickInterval()`) 후 `activated` 시그널(실제 액션 트리거), 더블클릭은
   타이머를 취소하고 `configure_requested` 시그널(설정 다이얼로그 오픈)을
   쏜다. `MainWindow`가 `pad_activated -> engine.trigger()`,
-  `pad_configure_requested -> ActionConfigDialog` 로 각각 연결.
+  `pad_configure_requested -> ActionConfigDialog` 로 각각 연결. `PadButton`은
+  눌렀을 때 accent 색 `QGraphicsDropShadowEffect` glow를 낸다.
+  `MiniView.set_accent(accent_hex)`가 모든 패드와 패널 테두리에 전파.
 - 테마: `set_dark(bool)`로 Light/Dark 전환. Light는 실제로 반투명(흰색
   글래스, 어두운 텍스트), Dark는 어두운 글래스 배경에 밝은 텍스트
   (`#f2f4f8`, 이전엔 `#d7dae0`라 잘 안 보였음 — 가독성 때문에 밝게 조정).
   `ExpandedView`는 이번 라운드에서 테마 손 안 댐(레이블 잘림만 수정),
   다음 UI 라운드 대상.
+- `ui/expanded_view.py`의 `JoystickWidget` — 오랫동안 배경/테두리가 전혀
+  그려지지 않던 버그가 여기도 있었음(`WA_StyledBackground` 미설정, 위
+  Mini/ExpandedView와 같은 근본 원인). 속성 추가로 고치면서 "소켓 +
+  광택 있는 구형 손잡이" 그라디언트 디자인으로 다시 그림. 같은 파일의
+  `KnobWidget(QFrame)`이 기존 평범한 `QLabel` 노브 8개를 대체 —
+  `ui/knob_geometry.py`의 `needle_angle()`로 실시간 값을 그리는 두 스타일
+  지원: `"A"`(숫자 유지 + 작은 점이 궤도를 도는 방식), `"B"`(숫자 없이
+  풀 니들만). `ExpandedView.set_knob_style(style)`/`set_accent(accent_hex)`
+  로 전환.
 - `core/program_finder.py`: Start Menu(`%APPDATA%`/`%PROGRAMDATA%`)의
   `.lnk` 재귀 스캔 -> `win32com.client`(WScript.Shell)로 타겟 exe resolve.
   `list_installed_programs(search_dirs=, resolver=)` 둘 다 주입 가능 —
@@ -145,7 +156,13 @@ tool-forced 구조화 출력으로만 호출하고, 절대 자동 실행/저장�
   이름만 수정 가능.
 - `ui/bank_indicator.py`의 `BankIndicator` — 활성 뱅크 이름을 표시,
   `ui/midi_status_dot.py`의 `MidiStatusDot`과 같은 `MainWindow` 오버레이
-  위젯 패턴.
+  위젯 패턴. 불투명 accent 배지로 렌더링 — `set_dark`는 완전히 삭제됐고,
+  외형을 바꾸는 유일한 메서드는 `set_accent(accent_hex)`(아래 디자인
+  설정 참고).
+- `ui/accent.py`: 7개의 선택 가능한 accent 색상(`ACCENT_CHOICES`)과
+  `mix()`/`hex_to_rgb_str()` 색상 연산 순수 함수. `ui/knob_geometry.py`:
+  `needle_angle(value)` — 노브 값을 7시~5시(12시를 지나 시계방향 300°)
+  스윕 각도로 변환하는 순수 함수. 둘 다 pytest 커버.
 - `config.py`: `DEFAULT_ACTIONS_PATH`, 모드/테마/always-on-top 영속화
   (`load_last_mode`/`save_last_mode`, `load_last_theme`/`save_last_theme`,
   `load_last_always_on_top`/`save_last_always_on_top`, 전부 `QSettings`,
@@ -153,7 +170,10 @@ tool-forced 구조화 출력으로만 호출하고, 절대 자동 실행/저장�
   트레이/우클릭 메뉴의 체크 가능한 "Always on Top" 항목에서 토글 —
   `MainWindow._apply_always_on_top()`이 `Qt.WindowType.WindowStaysOnTopHint`
   플래그를 set/clear하고, 창이 이미 보이는 상태면 `setWindowFlags` 후
-  `show()`를 다시 호출해야 함(Qt 제약 — 플래그 변경 시 창이 hide됨).
+  `show()`를 다시 호출해야 함(Qt 제약 — 플래그 변경 시 창이 hide됨). 같은
+  `QSettings` 패턴으로 `load_last_accent`/`save_last_accent`,
+  `load_last_knob_style`/`save_last_knob_style` 추가(디자인 설정, 아래
+  참고).
 - `core/nl_action.py`: `parse_nl_action(text, installed_programs, client=None)
   -> Binding | None`. Claude Haiku 4.5를 tool_choice로 강제해 구조화 출력만
   받음 — `launch_program`은 모델이 고른 프로그램 이름이 실제 설치 목록에
@@ -266,6 +286,23 @@ UI, Action Config Dialog, `core/nl_action.py`). pytest 전체 통과.
 3. **C. 조이스틱 기본 스크롤 + UI 실제 움직임** — 조이스틱을 기본으로
    가로/세로 스크롤 액션에 매핑, ExpandedView 조이스틱이 실제 밀리는 것처럼
    시각적으로도 움직이게.
+
+**애드혹 삽입 — 디자인 설정(accent 색 + 노브 스타일), 2026-08-29, A-F
+목록에는 없던 항목**: C의 라이브 테스트 도중 발견한 실제 버그 두 개
+(`BankIndicator`의 반투명 글래스 필이 다크 모드에서 안 읽힘, `WA_
+StyledBackground` 누락으로 `JoystickWidget` 손잡이가 원이 아니라 사각형으로
+렌더링됨)에서 시작 — 제대로 고치려다 사용자와 인터랙티브 HTML 목업(세션 중
+Artifact로 게시)으로 디자인을 다시 잡는 쪽으로 커졌고, 최종적으로 선택
+가능한 accent 색 7종 + 노브 시각 스타일 2종(둘 다 목업이 아니라 실제 구현/
+배포됨)이 `QSettings`로 영속되고, 기존 트레이 컨텍스트 메뉴에 새 "Design"
+서브메뉴로 노출되는 기능으로 완성. 8개 태스크 전부 리뷰 통과(사소한 항목만,
+전부 스펙 범위 안) 후 `main`에 머지. **의도적 예외 한 가지**: 키보드 검은건반
+테두리 색은 여전히 리터럴 `config.ACCENT_RGB` 상수에 고정 — 사용자가 명시적
+요청한 유일하게 새 accent 설정이 안 닿는 지점. 스펙:
+`docs/superpowers/specs/2026-08-29-design-preferences.md`, 계획:
+`docs/superpowers/plans/2026-08-29-design-preferences.md`. 아직 라이브 확인
+안 된 것: 앱 재시작 후 Design 메뉴 선택값 유지, 실제 MPK mini MK2 노브를
+돌렸을 때 화면 인디케이터가 실시간으로 따라오는지.
 4. **D. 액션 타입 확장 + 자연어 설정 커버리지 확대** — 프로그램 실행,
    현재 열린 창 위치/크기 기억해서 나중에 복원(새로운 종류 — 영속 상태
    필요), 노브로 소리/밝기 조절, 쉘 커맨드 실행, 미디어 컨트롤 등. 전부

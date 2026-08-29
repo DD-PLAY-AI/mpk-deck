@@ -1,9 +1,10 @@
 import logging
+from typing import Callable, Optional
 
 import mido
 
 from mpk_deck.core.action_engine import ActionEngine
-from mpk_deck.midi.translator import translate
+from mpk_deck.midi.translator import is_bank_b_pad_note, translate
 
 logger = logging.getLogger(__name__)
 
@@ -18,9 +19,15 @@ _ABANDONED_PORTS: list = []
 
 
 class MPKController:
-    def __init__(self, action_engine: ActionEngine, port_name_contains: str = "MPK mini") -> None:
+    def __init__(
+        self,
+        action_engine: ActionEngine,
+        port_name_contains: str = "MPK mini",
+        on_bank_b_pad: Optional[Callable[[], None]] = None,
+    ) -> None:
         self._engine = action_engine
         self._port_name_contains = port_name_contains
+        self._on_bank_b_pad = on_bank_b_pad
         self._port = None
 
     def find_port_name(self, *, log: bool = True) -> str | None:
@@ -101,6 +108,8 @@ class MPKController:
 
     def _on_message(self, message: mido.Message) -> None:
         try:
+            if self._on_bank_b_pad is not None and is_bank_b_pad_note(message):
+                self._on_bank_b_pad()
             event = translate(message)
             if event is None:
                 return

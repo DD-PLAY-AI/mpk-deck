@@ -58,6 +58,29 @@ def test_on_message_ignores_unmapped_message():
     assert calls == []
 
 
+def test_on_message_fires_bank_b_pad_callback_for_note_44():
+    calls = []
+    controller = MPKController(action_engine=ActionEngine(), on_bank_b_pad=lambda: calls.append(True))
+
+    controller._on_message(mido.Message("note_on", note=44, velocity=100))
+
+    assert calls == [True]
+
+
+def test_on_message_does_not_fire_bank_b_pad_callback_for_keybed_note():
+    calls = []
+    controller = MPKController(action_engine=ActionEngine(), on_bank_b_pad=lambda: calls.append(True))
+
+    controller._on_message(mido.Message("note_on", note=48, velocity=100))
+
+    assert calls == []
+
+
+def test_on_message_without_bank_b_callback_does_not_raise():
+    controller = MPKController(action_engine=ActionEngine())
+    controller._on_message(mido.Message("note_on", note=44, velocity=100))  # must not raise
+
+
 class _FakePort:
     def __init__(self) -> None:
         self.closed = False

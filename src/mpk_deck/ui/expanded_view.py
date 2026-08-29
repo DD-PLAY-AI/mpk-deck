@@ -439,7 +439,11 @@ class ExpandedView(WindowGripMixin, QWidget):
         self._joystick.apply_style(colors, self._accent_hex, joy_d)
 
         btn_qss = _button_qss(colors, btn_font, radius=4 * scale, accent_hex=self._accent_hex)
-        muted_qss = btn_qss + " QPushButton { color: rgba(150,150,160,150); }"
+        muted_qss = btn_qss + (
+            " QPushButton { color: rgba(150,150,160,150); }"
+            f" QPushButton:hover {{ background: {colors['fill']}; }}"
+            f" QPushButton:pressed {{ background: {colors['fill']}; border: 1px solid {colors['border']}; }}"
+        )
         for control, btn in self._buttons.items():
             btn.setStyleSheet(muted_qss if control in DECORATIVE_CONTROLS else btn_qss)
             btn.setFixedSize(btn_w, btn_h)

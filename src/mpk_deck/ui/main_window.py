@@ -138,6 +138,7 @@ class MainWindow(QMainWindow):
         self._expanded_view.control_configure_requested.connect(self._on_control_configure_requested)
         self._expanded_view.decorative_button_activated.connect(self._on_decorative_button)
         self._expanded_view.knob_locked_activated.connect(self._on_knob_locked)
+        self._expanded_view.set_knob_value("knob_1", 0.5)
 
         container = QWidget(self)
         layout = QVBoxLayout(container)
@@ -317,14 +318,18 @@ class MainWindow(QMainWindow):
         self._engine.trigger(control)
 
     def _on_trigger(self, control: str, ok: bool) -> None:
-        QTimer.singleShot(0, lambda: self._apply_trigger_flash(control, ok))
+        QTimer.singleShot(0, self, lambda: self._apply_trigger_flash(control, ok))
 
     def _apply_trigger_flash(self, control: str, ok: bool) -> None:
         view = self._mini_view if self._mode == "mini" else self._expanded_view
         view.flash_control(control, ok)
 
     def _on_bank_b_pad(self) -> None:
-        QTimer.singleShot(0, self._bank_hint.show_hint)
+        QTimer.singleShot(0, self, self._show_bank_hint)
+
+    def _show_bank_hint(self) -> None:
+        self._bank_hint.show_hint()
+        self._position_overlay_widgets()
 
     def _on_decorative_button(self, control: str) -> None:
         QMessageBox.information(
@@ -339,7 +344,7 @@ class MainWindow(QMainWindow):
         )
 
     def _on_bank_changed(self, bank_id: str) -> None:
-        QTimer.singleShot(0, lambda: self._apply_bank_change(bank_id))
+        QTimer.singleShot(0, self, lambda: self._apply_bank_change(bank_id))
 
     def _apply_bank_change(self, bank_id: str) -> None:
         self._bindings = dict(self._engine.bindings)
@@ -350,7 +355,7 @@ class MainWindow(QMainWindow):
         save_config(DEFAULT_ACTIONS_PATH, self._config)
 
     def _on_joystick_continuous(self, control: str, value: float) -> None:
-        QTimer.singleShot(0, lambda: self._apply_joystick_continuous(control, value))
+        QTimer.singleShot(0, self, lambda: self._apply_joystick_continuous(control, value))
 
     def _apply_joystick_continuous(self, control: str, value: float) -> None:
         if control in self._joystick_values:

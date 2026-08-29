@@ -14,6 +14,7 @@ class ActionEngine:
         self,
         on_bank_changed: Optional[Callable[[str], None]] = None,
         on_continuous: Optional[Callable[[str, float], None]] = None,
+        on_trigger: Optional[Callable[[str, bool], None]] = None,
     ) -> None:
         self._trigger_handlers: dict[str, TriggerHandler] = {}
         self._continuous_handlers: dict[str, ContinuousHandler] = {}
@@ -23,6 +24,7 @@ class ActionEngine:
         self._active_bank: str = ""
         self._on_bank_changed = on_bank_changed
         self._on_continuous = on_continuous
+        self._on_trigger = on_trigger
 
     def register_trigger(self, action_name: str, handler: TriggerHandler) -> None:
         self._trigger_handlers[action_name] = handler
@@ -67,12 +69,23 @@ class ActionEngine:
             return
         if binding.action == "switch_bank":
             self.switch_bank(binding.params["bank_id"])
+            self._report_trigger(control, True)
             return
         handler = self._trigger_handlers.get(binding.action)
         if handler is None:
             logger.warning("no trigger handler registered for action %s", binding.action)
             return
-        handler(binding.params)
+        try:
+            handler(binding.params)
+        except Exception:
+            logger.warning("trigger handler for %s failed", binding.action, exc_info=True)
+            self._report_trigger(control, False)
+            return
+        self._report_trigger(control, True)
+
+    def _report_trigger(self, control: str, ok: bool) -> None:
+        if self._on_trigger is not None:
+            self._on_trigger(control, ok)
 
     def set_continuous(self, control: str, value: float) -> None:
         if self._on_continuous is not None:

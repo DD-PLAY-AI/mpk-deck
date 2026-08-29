@@ -163,3 +163,61 @@ def test_set_continuous_calls_on_continuous_even_when_handler_is_registered():
 def test_set_continuous_without_on_continuous_callback_does_not_raise():
     engine = ActionEngine()
     engine.set_continuous("joystick_x", 0.5)
+
+
+def test_on_trigger_reports_success_for_clean_handler():
+    calls = []
+    engine = ActionEngine(on_trigger=lambda control, ok: calls.append((control, ok)))
+    engine.register_trigger("noop", lambda params: None)
+    engine.load_banks({"b": [Binding(control="pad_1", type="trigger", action="noop", params={})]}, {}, "b")
+
+    engine.trigger("pad_1")
+
+    assert calls == [("pad_1", True)]
+
+
+def test_on_trigger_reports_failure_when_handler_raises(caplog):
+    calls = []
+    engine = ActionEngine(on_trigger=lambda control, ok: calls.append((control, ok)))
+
+    def boom(params):
+        raise RuntimeError("handler blew up")
+
+    engine.register_trigger("boom", boom)
+    engine.load_banks({"b": [Binding(control="pad_1", type="trigger", action="boom", params={})]}, {}, "b")
+
+    engine.trigger("pad_1")  # must not raise
+
+    assert calls == [("pad_1", False)]
+    assert "failed" in caplog.text
+
+
+def test_on_trigger_not_called_when_control_is_unbound():
+    calls = []
+    engine = ActionEngine(on_trigger=lambda control, ok: calls.append((control, ok)))
+    engine.load_banks({"b": []}, {}, "b")
+
+    engine.trigger("pad_1")
+
+    assert calls == []
+
+
+def test_on_trigger_not_called_when_no_handler_registered():
+    calls = []
+    engine = ActionEngine(on_trigger=lambda control, ok: calls.append((control, ok)))
+    engine.load_banks({"b": [Binding(control="pad_1", type="trigger", action="ghost", params={})]}, {}, "b")
+
+    engine.trigger("pad_1")
+
+    assert calls == []
+
+
+def test_on_trigger_reports_success_for_switch_bank():
+    calls = []
+    engine = ActionEngine(on_trigger=lambda control, ok: calls.append((control, ok)))
+    engine.load_banks({"home": [], "work": []}, {"pad_1": "work"}, "home")
+
+    engine.trigger("pad_1")
+
+    assert calls == [("pad_1", True)]
+    assert engine.active_bank == "work"

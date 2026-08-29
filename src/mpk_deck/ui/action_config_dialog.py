@@ -49,7 +49,8 @@ PARAM_KEY = {
     "switch_bank": None,
 }
 
-DIALOG_QSS = f"""
+def _dialog_qss(accent_hex: str) -> str:
+    return f"""
 QDialog {{ background: #1c1e26; }}
 QLabel {{ color: #f2f4f8; font-size: 12px; }}
 QLabel#heading {{ font-size: 14px; font-weight: 600; }}
@@ -63,7 +64,7 @@ QListWidget {{
     outline: none;
 }}
 QListWidget::item {{ padding: 8px; border-radius: 6px; }}
-QListWidget::item:selected {{ background: {ACCENT_HEX}; color: white; }}
+QListWidget::item:selected {{ background: {accent_hex}; color: white; }}
 QListWidget::item:hover:!selected {{ background: #2c2e38; }}
 QLineEdit {{
     background: #23242b;
@@ -82,7 +83,7 @@ QPushButton {{
     font-size: 12px;
 }}
 QPushButton:hover {{ background: #363844; }}
-QPushButton#primary {{ background: {ACCENT_HEX}; border: none; font-weight: 600; }}
+QPushButton#primary {{ background: {accent_hex}; border: none; font-weight: 600; }}
 QPushButton#primary:hover {{ background: #4b7bf5; }}
 """
 
@@ -94,11 +95,12 @@ class ActionConfigDialog(QDialog):
         existing: Binding | None = None,
         parent: QWidget | None = None,
         bank_names: dict[str, str] | None = None,
+        accent_hex: str = ACCENT_HEX,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(f"Configure {control}")
         self.setMinimumSize(480, 320)
-        self.setStyleSheet(DIALOG_QSS)
+        self.setStyleSheet(_dialog_qss(accent_hex))
         self._control = control
         self._bank_names = bank_names or {}
         self._locked = existing is not None and existing.action == "switch_bank"

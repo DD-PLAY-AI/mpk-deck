@@ -1,7 +1,7 @@
 import mido
 import pytest
 
-from mpk_deck.midi.translator import ControlEvent, translate
+from mpk_deck.midi.translator import ControlEvent, is_bank_b_pad_note, translate
 
 
 def test_translate_pad_note_on_returns_trigger_event():
@@ -19,9 +19,52 @@ def test_translate_note_on_zero_velocity_is_ignored():
     assert translate(msg) is None
 
 
-def test_translate_unmapped_note_falls_back_to_key_control():
+def test_translate_keybed_low_c_maps_to_key_0():
+    msg = mido.Message("note_on", note=48, velocity=100)
+    assert translate(msg) == ControlEvent(control="key_0", kind="trigger")
+
+
+def test_translate_keybed_middle_note_maps_by_offset():
     msg = mido.Message("note_on", note=60, velocity=100)
-    assert translate(msg) == ControlEvent(control="key_60", kind="trigger")
+    assert translate(msg) == ControlEvent(control="key_12", kind="trigger")
+
+
+def test_translate_keybed_top_c_maps_to_key_24():
+    msg = mido.Message("note_on", note=72, velocity=100)
+    assert translate(msg) == ControlEvent(control="key_24", kind="trigger")
+
+
+def test_translate_note_above_keybed_returns_none():
+    msg = mido.Message("note_on", note=73, velocity=100)
+    assert translate(msg) is None
+
+
+def test_translate_bank_b_pad_note_produces_no_control_event():
+    # notes 44-47 are Bank B pads; ambiguous vs the keybed, deliberately dropped
+    msg = mido.Message("note_on", note=44, velocity=100)
+    assert translate(msg) is None
+
+
+def test_is_bank_b_pad_note_true_for_44_to_47():
+    for note in (44, 45, 46, 47):
+        assert is_bank_b_pad_note(mido.Message("note_on", note=note, velocity=100)) is True
+
+
+def test_is_bank_b_pad_note_false_for_zero_velocity():
+    assert is_bank_b_pad_note(mido.Message("note_on", note=44, velocity=0)) is False
+
+
+def test_is_bank_b_pad_note_false_for_note_off():
+    assert is_bank_b_pad_note(mido.Message("note_off", note=44, velocity=0)) is False
+
+
+def test_is_bank_b_pad_note_false_for_bank_a_pad_and_keybed():
+    assert is_bank_b_pad_note(mido.Message("note_on", note=43, velocity=100)) is False
+    assert is_bank_b_pad_note(mido.Message("note_on", note=48, velocity=100)) is False
+
+
+def test_is_bank_b_pad_note_false_for_control_change():
+    assert is_bank_b_pad_note(mido.Message("control_change", control=1, value=64)) is False
 
 
 def test_translate_knob_cc_returns_continuous_event_normalized():

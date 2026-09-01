@@ -209,3 +209,24 @@ def test_save_then_load_round_trips_new_format(tmp_path):
     )
     save_config(path, config)
     assert load_config(path) == config
+
+
+def test_save_config_failure_leaves_existing_file_intact(tmp_path, monkeypatch):
+    import mpk_deck.core.action_registry as reg
+
+    path = tmp_path / "actions.yaml"
+    good = DeckConfig(
+        active_bank="bank_a",
+        switch_bindings={"key_0": "bank_a"},
+        banks={"bank_a": Bank(name="Home", bindings=default_joystick_bindings())},
+    )
+    save_config(path, good)
+
+    monkeypatch.setattr(reg.os, "replace", lambda *a, **k: (_ for _ in ()).throw(OSError("boom")))
+    try:
+        save_config(path, DeckConfig(active_bank="x", switch_bindings={}, banks={}))
+    except OSError:
+        pass
+
+    assert load_config(path) == good  # old config untouched
+    assert list(tmp_path.iterdir()) == [path]  # no leftover .tmp file

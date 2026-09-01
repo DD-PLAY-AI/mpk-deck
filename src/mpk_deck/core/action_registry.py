@@ -1,5 +1,7 @@
 import logging
+import os
 import re
+import tempfile
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Iterable, Literal
@@ -151,8 +153,22 @@ def save_config(path: str | Path, config: DeckConfig) -> None:
             for bank_id, bank in config.banks.items()
         },
     }
-    with path.open("w", encoding="utf-8") as f:
-        yaml.safe_dump(data, f, sort_keys=False)
+    text = yaml.safe_dump(data, sort_keys=False)
+    # Atomic write: a crash mid-write must not truncate an existing config -
+    # load_config falls back to defaults on a broken file, which silently drops
+    # every binding. Write a sibling temp file, fsync, then os.replace (atomic
+    # on the same filesystem).
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
 
 
 def _parse_binding(entry: dict) -> Binding:

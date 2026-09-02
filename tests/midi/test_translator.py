@@ -5,17 +5,17 @@ from mpk_deck.midi.translator import ControlEvent, is_bank_b_pad_note, translate
 
 
 def test_translate_pad_note_on_returns_trigger_event():
-    msg = mido.Message("note_on", note=36, velocity=100)
+    msg = mido.Message("note_on", note=32, velocity=100)
     assert translate(msg) == ControlEvent(control="pad_1", kind="trigger")
 
 
 def test_translate_last_pad_note_maps_to_pad_8():
-    msg = mido.Message("note_on", note=43, velocity=100)
+    msg = mido.Message("note_on", note=39, velocity=100)
     assert translate(msg) == ControlEvent(control="pad_8", kind="trigger")
 
 
 def test_translate_note_on_zero_velocity_is_ignored():
-    msg = mido.Message("note_on", note=36, velocity=0)
+    msg = mido.Message("note_on", note=32, velocity=0)
     assert translate(msg) is None
 
 
@@ -58,8 +58,8 @@ def test_is_bank_b_pad_note_false_for_note_off():
     assert is_bank_b_pad_note(mido.Message("note_off", note=44, velocity=0)) is False
 
 
-def test_is_bank_b_pad_note_false_for_bank_a_pad_and_keybed():
-    assert is_bank_b_pad_note(mido.Message("note_on", note=43, velocity=100)) is False
+def test_is_bank_b_pad_note_false_for_active_pad_and_keybed():
+    assert is_bank_b_pad_note(mido.Message("note_on", note=39, velocity=100)) is False
     assert is_bank_b_pad_note(mido.Message("note_on", note=48, velocity=100)) is False
 
 
@@ -68,16 +68,16 @@ def test_is_bank_b_pad_note_false_for_control_change():
 
 
 def test_translate_knob_cc_returns_continuous_event_normalized():
-    # CC1 now belongs to the joystick's Y axis (see below) - use CC2 (knob_2) here.
+    # Knobs are remapped to CC 2-9 (knob_N -> CC N+1); CC1 is the joystick Y axis.
     msg = mido.Message("control_change", control=2, value=127)
     event = translate(msg)
-    assert event.control == "knob_2"
+    assert event.control == "knob_1"
     assert event.kind == "continuous"
     assert event.value == 1.0
 
 
 def test_translate_knob_cc_zero_value_normalizes_to_zero():
-    msg = mido.Message("control_change", control=8, value=0)
+    msg = mido.Message("control_change", control=9, value=0)
     event = translate(msg)
     assert event.control == "knob_8"
     assert event.value == 0.0
@@ -110,26 +110,25 @@ def test_translate_pitchwheel_negative_extreme_is_exactly_minus_one():
     assert translate(msg) == ControlEvent(control="joystick_x", kind="continuous", value=-1.0)
 
 
-def test_translate_joystick_y_cc_center_returns_zero():
-    msg = mido.Message("control_change", control=1, value=64)
+def test_translate_joystick_y_cc_rest_returns_zero():
+    # This unit's Y axis is unipolar: value 0 at rest, not a bipolar 64 center.
+    msg = mido.Message("control_change", control=1, value=0)
     assert translate(msg) == ControlEvent(control="joystick_y", kind="continuous", value=0.0)
 
 
-def test_translate_joystick_y_cc_max_clamps_to_one():
+def test_translate_joystick_y_cc_max_is_one():
     msg = mido.Message("control_change", control=1, value=127)
-    event = translate(msg)
-    assert event.control == "joystick_y"
-    assert event.value == pytest.approx(1.0, abs=0.02)
+    assert translate(msg) == ControlEvent(control="joystick_y", kind="continuous", value=1.0)
 
 
-def test_translate_joystick_y_cc_min_is_exactly_minus_one():
-    msg = mido.Message("control_change", control=1, value=0)
-    assert translate(msg) == ControlEvent(control="joystick_y", kind="continuous", value=-1.0)
+def test_translate_joystick_y_cc_never_goes_negative():
+    for value in (0, 1, 32, 64, 127):
+        event = translate(mido.Message("control_change", control=1, value=value))
+        assert event.control == "joystick_y"
+        assert event.value >= 0.0
 
 
-def test_translate_joystick_y_cc_takes_priority_over_knob_1():
-    """CC1 is also KNOB_CC_TO_CONTROL's entry for knob_1 - joystick_y wins by
-    design, see docs/superpowers/specs/2026-08-28-joystick-scroll-design.md."""
-    msg = mido.Message("control_change", control=1, value=100)
-    event = translate(msg)
+def test_translate_cc1_is_joystick_not_a_knob():
+    """After the editor remap knobs start at CC2; CC1 is the joystick Y axis only."""
+    event = translate(mido.Message("control_change", control=1, value=100))
     assert event.control == "joystick_y"

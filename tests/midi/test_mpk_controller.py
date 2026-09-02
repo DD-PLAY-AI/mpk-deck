@@ -31,7 +31,7 @@ def test_on_message_triggers_engine_for_pad():
     engine.trigger = lambda control: calls.append(control)
     controller = MPKController(action_engine=engine)
 
-    controller._on_message(mido.Message("note_on", note=36, velocity=100))
+    controller._on_message(mido.Message("note_on", note=32, velocity=100))
 
     assert calls == ["pad_1"]
 
@@ -44,7 +44,7 @@ def test_on_message_sets_continuous_for_knob():
 
     controller._on_message(mido.Message("control_change", control=2, value=64))
 
-    assert calls == [("knob_2", 64 / 127.0)]
+    assert calls == [("knob_1", 64 / 127.0)]
 
 
 def test_on_message_ignores_unmapped_message():

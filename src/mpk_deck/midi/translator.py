@@ -3,20 +3,20 @@ from typing import Literal, Optional
 
 import mido
 
-# Factory-default MPK mini MK2 mapping (confirmed on hardware 2026-08-29, see
-# docs/superpowers/specs/2026-08-29-hardware-wiring-design.md): pads on notes
-# 36-43 (Bank A), knobs 2-8 on CC 2-8. Knob 1 and the joystick Y axis both send
-# CC 1 - the joystick wins (JOYSTICK_Y_CC check below runs first), so knob 1 has
-# no MIDI entry here and mirrors joystick_y in the UI instead.
-PAD_NOTE_TO_CONTROL = {36 + i: f"pad_{i + 1}" for i in range(8)}
-KNOB_CC_TO_CONTROL = {cc: f"knob_{cc}" for cc in range(2, 9)}
+# MPK mini MK2 mapping, re-confirmed on hardware 2026-09-02 (this unit's factory
+# preset differs from the 2026-08-29 assumptions): pads send notes 32-39 on the
+# pad bank the user keeps active, knobs 1-8 were remapped in the AKAI editor to
+# CC 2-9 (a +1 shift off the factory CC 1-8) so CC 1 is now the joystick Y axis
+# alone - no knob/joystick collision anymore.
+PAD_NOTE_TO_CONTROL = {32 + i: f"pad_{i + 1}" for i in range(8)}
+KNOB_CC_TO_CONTROL = {cc: f"knob_{cc - 1}" for cc in range(2, 10)}
 KEYBED_BASE_NOTE = 48  # C3 - lowest key at the MPK mini MK2's default octave
 KEYBED_KEY_COUNT = 25  # 2 octaves + 1, matches the physical keybed and ui/keybed.py NUM_KEYS
-BANK_B_PAD_NOTES = frozenset(range(44, 48))  # Bank B pads that don't collide with the keybed
+BANK_B_PAD_NOTES = frozenset(range(44, 48))  # the other pad bank's low notes, used only for the "switch back" hint
 
-# Confirmed on hardware: the joystick Y axis is CC 1. Checked before
-# KNOB_CC_TO_CONTROL below, so the joystick owns CC 1 and knob 1 is unreachable
-# via MIDI (by design - knob 1 mirrors joystick_y in the UI).
+# The joystick Y axis is CC 1. This unit's preset makes it unipolar: value 0 at
+# rest, climbing to 127 at full deflection (one direction only), so it decodes to
+# [0.0, 1.0], not a bipolar [-1.0, 1.0]. CC 1 no longer carries any knob.
 JOYSTICK_Y_CC = 1
 
 
@@ -40,7 +40,7 @@ def translate(message: mido.Message) -> Optional[ControlEvent]:
         return ControlEvent(control="joystick_x", kind="continuous", value=value)
     if message.type == "control_change":
         if message.control == JOYSTICK_Y_CC:
-            value = max(-1.0, min(1.0, (message.value - 64) / 64))
+            value = max(0.0, min(1.0, message.value / 127))
             return ControlEvent(control="joystick_y", kind="continuous", value=value)
         control = KNOB_CC_TO_CONTROL.get(message.control)
         if control is None:

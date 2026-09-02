@@ -100,3 +100,30 @@ def test_scroll_horizontal_missing_sensitivity_defaults_to_one():
     calls = []
     handlers.scroll_horizontal({}, 1.0, sender=lambda **kw: calls.append(kw))
     assert calls == [{"horizontal": True, "notches": 3}]
+
+
+def test_apply_layout_restores_the_named_layout():
+    from mpk_deck.core.handlers import apply_layout
+    from mpk_deck.core.layout_store import Layout
+
+    layout = Layout(name="L", items=[])
+    got = []
+    apply_layout({"layout_id": "abc"}, loader=lambda: {"abc": layout}, restore=lambda lo: got.append(lo))
+    assert got == [layout]
+
+
+def test_apply_layout_no_id_is_a_noop():
+    from mpk_deck.core.handlers import apply_layout
+
+    called = []
+    apply_layout({}, loader=lambda: {}, restore=lambda lo: called.append(lo))
+    assert called == []
+
+
+def test_apply_layout_unknown_id_is_a_noop(caplog):
+    from mpk_deck.core.handlers import apply_layout
+
+    called = []
+    apply_layout({"layout_id": "missing"}, loader=lambda: {}, restore=lambda lo: called.append(lo))
+    assert called == []
+    assert "not found" in caplog.text.lower()

@@ -1,5 +1,6 @@
 import logging
 import subprocess
+import threading
 import webbrowser
 
 logger = logging.getLogger(__name__)
@@ -121,3 +122,31 @@ def _default_scroll_sender(*, horizontal: bool, notches: int) -> None:
 
     flag = win32con.MOUSEEVENTF_HWHEEL if horizontal else win32con.MOUSEEVENTF_WHEEL
     win32api.mouse_event(flag, 0, 0, notches * 120, 0)  # WHEEL_DELTA = 120 per notch
+
+
+def apply_layout(params: dict, *, loader=None, restore=None) -> None:
+    """Restore a saved workspace layout. The real work (launching apps, polling
+    for their windows for several seconds) runs on a daemon thread so the GUI
+    thread that dispatched this handler is never blocked."""
+    layout_id = params.get("layout_id")
+    if not layout_id:
+        logger.info("apply_layout: no layout bound")
+        return
+    load = loader or _default_layout_loader
+    layout = load().get(layout_id)
+    if layout is None:
+        logger.warning("apply_layout: layout %r not found", layout_id)
+        return
+    (restore or _spawn_restore)(layout)
+
+
+def _default_layout_loader():
+    from mpk_deck.core.layout_store import load_layouts
+
+    return load_layouts()
+
+
+def _spawn_restore(layout) -> None:
+    from mpk_deck.core.window_layout import restore_layout
+
+    threading.Thread(target=restore_layout, args=(layout,), daemon=True).start()

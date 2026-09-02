@@ -17,6 +17,11 @@ logger = logging.getLogger(__name__)
 # ponytail: per-session leak on hot-unplug; only matters if something unplugs hundreds of times.
 _ABANDONED_PORTS: list = []
 
+# The joystick axes scroll on a repeat-while-held timer in MainWindow, so the raw
+# MIDI feed only latches their value (moves the on-screen indicator) - it must not
+# also dispatch the scroll handler on every event, or scrolling doubles up.
+LATCH_ONLY_CONTROLS = frozenset({"joystick_x", "joystick_y"})
+
 
 class MPKController:
     def __init__(
@@ -24,10 +29,16 @@ class MPKController:
         action_engine: ActionEngine,
         port_name_contains: str = "MPK mini",
         on_bank_b_pad: Optional[Callable[[], None]] = None,
+        dispatch: Optional[Callable[[Callable[[], None]], None]] = None,
     ) -> None:
         self._engine = action_engine
         self._port_name_contains = port_name_contains
         self._on_bank_b_pad = on_bank_b_pad
+        # rtmidi delivers _on_message on its own callback thread; `dispatch` hands
+        # the engine call to whatever thread the caller wants it on (the GUI
+        # thread, so COM-using handlers like set_system_volume are safe). Default
+        # runs it inline - fine for tests and headless use.
+        self._dispatch = dispatch or (lambda fn: fn())
         self._port = None
 
     def find_port_name(self, *, log: bool = True) -> str | None:
@@ -114,8 +125,10 @@ class MPKController:
             if event is None:
                 return
             if event.kind == "trigger":
-                self._engine.trigger(event.control)
+                self._dispatch(lambda: self._engine.trigger(event.control))
+            elif event.control in LATCH_ONLY_CONTROLS:
+                self._dispatch(lambda: self._engine.notify_continuous(event.control, event.value))
             else:
-                self._engine.set_continuous(event.control, event.value)
+                self._dispatch(lambda: self._engine.set_continuous(event.control, event.value))
         except Exception:
             logger.warning("error handling MIDI input callback", exc_info=True)

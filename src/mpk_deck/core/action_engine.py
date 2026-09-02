@@ -87,9 +87,18 @@ class ActionEngine:
         if self._on_trigger is not None:
             self._on_trigger(control, ok)
 
-    def set_continuous(self, control: str, value: float) -> None:
+    def notify_continuous(self, control: str, value: float) -> None:
+        """Fire the on_continuous callback only - no action handler dispatch.
+
+        Used for controls whose action is driven elsewhere (the joystick axes
+        repeat-scroll on a MainWindow timer), so the raw MIDI feed should move
+        the on-screen indicator without also scrolling on every event.
+        """
         if self._on_continuous is not None:
             self._on_continuous(control, value)
+
+    def set_continuous(self, control: str, value: float) -> None:
+        self.notify_continuous(control, value)
         binding = self._bindings_by_control.get(control)
         if binding is None:
             return
@@ -97,4 +106,7 @@ class ActionEngine:
         if handler is None:
             logger.warning("no continuous handler registered for action %s", binding.action)
             return
-        handler(binding.params, value)
+        try:
+            handler(binding.params, value)
+        except Exception:
+            logger.warning("continuous handler for %s failed", binding.action, exc_info=True)

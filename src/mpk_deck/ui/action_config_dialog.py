@@ -123,6 +123,19 @@ class ActionConfigDialog(QDialog):
         self._volume_page = self._build_volume_page()
         self._bank_name_edit = self._build_bank_name_page()
         self._sensitivity_edit = self._build_sensitivity_page()
+        # Which _param_stack page each action shows. The action list has 7 rows but
+        # only 6 pages (both scroll actions share the sensitivity page), so the row
+        # index is NOT the page index - map by action name. Order matches the
+        # _build_* calls above.
+        self._page_for_action = {
+            "launch_program": 0,
+            "open_url": 1,
+            "focus_window": 2,
+            "set_system_volume": 3,
+            "switch_bank": 4,
+            "scroll_horizontal": 5,
+            "scroll_vertical": 5,
+        }
 
         body = QHBoxLayout()
         body.addWidget(self._action_list)
@@ -298,7 +311,7 @@ class ActionConfigDialog(QDialog):
         self._apply_binding(binding)
 
     def _on_action_changed(self, index: int) -> None:
-        self._param_stack.setCurrentIndex(index)
+        self._param_stack.setCurrentIndex(self._page_for_action.get(self._current_action(), 0))
 
     def _current_action(self) -> str:
         item = self._action_list.currentItem()

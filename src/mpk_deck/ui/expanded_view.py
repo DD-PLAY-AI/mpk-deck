@@ -53,6 +53,7 @@ _LIGHT = {
     "fill_pressed": "rgba(220,225,240,190)",
     "border": "rgba(120,120,140,90)",
     "text": "#23242b",
+    "text_muted": "rgba(35,36,43,115)",  # decorative (no-MIDI) function buttons: present but inactive
 }
 _DARK = {
     "fill": "rgba(255,255,255,18)",
@@ -60,6 +61,7 @@ _DARK = {
     "fill_pressed": "rgba(255,255,255,10)",
     "border": "rgba(255,255,255,38)",
     "text": "#f2f4f8",
+    "text_muted": "rgba(242,244,248,115)",
 }
 # Keybed colors are theme-tinted but always readable as "black key vs white key",
 # independent of app theme (a piano keybed reads by its own convention, not the app's).
@@ -91,6 +93,7 @@ class _DebouncedKey(QFrame):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._accent_hex = ACCENT_HEX
         self._click_timer = QTimer(self)
         self._click_timer.setSingleShot(True)
         self._click_timer.timeout.connect(self.activated.emit)
@@ -103,6 +106,9 @@ class _DebouncedKey(QFrame):
         self._flash_timer.setSingleShot(True)
         self._flash_timer.timeout.connect(lambda: self._glow.setEnabled(False))
 
+    def set_accent(self, accent_hex: str) -> None:
+        self._accent_hex = accent_hex
+
     def mousePressEvent(self, event) -> None:  # noqa: N802 (Qt override)
         if event.button() == Qt.MouseButton.LeftButton:
             self._click_timer.start(QApplication.doubleClickInterval())
@@ -113,10 +119,11 @@ class _DebouncedKey(QFrame):
         self.configure_requested.emit()
         super().mouseDoubleClickEvent(event)
 
-    def flash(self, ok: bool) -> None:
-        self._glow.setColor(QColor(0, 200, 90) if ok else QColor(220, 60, 60))
+    def flash(self) -> None:
+        """Brief accent glow when the key fires from hardware - matches a mouse press."""
+        self._glow.setColor(QColor(self._accent_hex))
         self._glow.setEnabled(True)
-        self._flash_timer.start(200)
+        self._flash_timer.start(180)
 
 
 def _qcolor(spec: str) -> QColor:
@@ -234,7 +241,6 @@ class KnobWidget(QFrame):
     7 o'clock, value 1.0 -> 5 o'clock, clockwise through 12."""
 
     configure_requested = Signal()
-    blocked_configure_requested = Signal()
 
     def __init__(self, label: str, parent=None) -> None:
         super().__init__(parent)
@@ -245,13 +251,9 @@ class KnobWidget(QFrame):
         self._style = "B"
         self._colors = _DARK
         self._accent_hex = ACCENT_HEX
-        self._locked = label == "1"
 
     def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802 (Qt override)
-        if self._locked:
-            self.blocked_configure_requested.emit()
-        else:
-            self.configure_requested.emit()
+        self.configure_requested.emit()
         super().mouseDoubleClickEvent(event)
 
     def set_value(self, value: float) -> None:
@@ -269,14 +271,10 @@ class KnobWidget(QFrame):
         font.setPixelSize(max(1, round(font_px)))
         font.setWeight(QFont.Weight.Bold)  # matches the old QLabel knob styling's font-weight: 700
         self.setFont(font)
-        accent_rgb = "128,128,128" if self._locked else hex_to_rgb_str(accent_hex)
+        accent_rgb = hex_to_rgb_str(accent_hex)
         background = (
-            "rgba(128,128,128,70)"
-            if self._locked
-            else (
-                "qradialgradient(cx:0.35, cy:0.3, radius:0.75, fx:0.35, fy:0.3, "
-                f"stop:0 {colors['fill_hover']}, stop:1 {colors['fill']})"
-            )
+            "qradialgradient(cx:0.35, cy:0.3, radius:0.75, fx:0.35, fy:0.3, "
+            f"stop:0 {colors['fill_hover']}, stop:1 {colors['fill']})"
         )
         self.setStyleSheet(
             f"QFrame {{ background: {background}; "
@@ -290,7 +288,7 @@ class KnobWidget(QFrame):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         d = self.width()
         r = d / 2
-        accent = QColor("#808080") if self._locked else QColor(self._accent_hex)
+        accent = QColor(self._accent_hex)
 
         if self._style == "A":
             painter.setPen(QColor(self._colors["text"]))
@@ -330,7 +328,6 @@ class ExpandedView(WindowGripMixin, QWidget):
     control_activated = Signal(str)
     control_configure_requested = Signal(str)
     decorative_button_activated = Signal(str)
-    knob_locked_activated = Signal()
 
     def __init__(self, dark: bool = False, parent=None) -> None:
         super().__init__(parent, aspect=ASPECT, min_width=BASE_WIDTH)
@@ -366,7 +363,6 @@ class ExpandedView(WindowGripMixin, QWidget):
         for control in KNOB_LABELS_TOP + KNOB_LABELS_BOTTOM:
             knob = KnobWidget(control.split("_")[1].upper(), self)
             knob.configure_requested.connect(lambda c=control: self.control_configure_requested.emit(c))
-            knob.blocked_configure_requested.connect(self.knob_locked_activated.emit)
             self._knobs[control] = knob
 
         # 25 keys (15 white + 10 black), C to C over 2 octaves + 1 — matches the physical keybed.
@@ -403,6 +399,8 @@ class ExpandedView(WindowGripMixin, QWidget):
         self._accent_hex = accent_hex
         for btn in list(self._buttons.values()) + list(self._pads.values()):
             btn.set_accent(accent_hex)
+        for key in self._keys.values():
+            key.set_accent(accent_hex)
         self.set_dark(self._dark)  # re-derives panel/bank-group border color, and re-layouts
 
     def set_knob_style(self, style: str) -> None:
@@ -417,15 +415,15 @@ class ExpandedView(WindowGripMixin, QWidget):
         if knob is not None:
             knob.set_value(value)
 
-    def flash_control(self, control: str, ok: bool) -> None:
+    def flash_control(self, control: str) -> None:
         pad = self._pads.get(control)
         if pad is not None:
-            pad.flash(ok)
+            pad.flash()
             return
         if control.startswith("key_"):
             key = self._keys.get(int(control[4:]))
             if key is not None:
-                key.flash(ok)
+                key.flash()
 
     def resizeEvent(self, event) -> None:  # noqa: N802 (Qt override)
         super().resizeEvent(event)
@@ -447,7 +445,7 @@ class ExpandedView(WindowGripMixin, QWidget):
 
         btn_qss = _button_qss(colors, btn_font, radius=4 * scale, accent_hex=self._accent_hex)
         muted_qss = btn_qss + (
-            " QPushButton { color: rgba(150,150,160,150); }"
+            f" QPushButton {{ color: {colors['text_muted']}; }}"
             f" QPushButton:hover {{ background: {colors['fill']}; }}"
             f" QPushButton:pressed {{ background: {colors['fill']}; border: 1px solid {colors['border']}; }}"
         )

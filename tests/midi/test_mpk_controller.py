@@ -47,6 +47,35 @@ def test_on_message_sets_continuous_for_knob():
     assert calls == [("knob_1", 64 / 127.0)]
 
 
+def test_on_message_latches_joystick_axis_without_dispatching_handler():
+    engine = ActionEngine()
+    notified = []
+    dispatched = []
+    engine.notify_continuous = lambda control, value: notified.append((control, value))
+    engine.set_continuous = lambda control, value: dispatched.append((control, value))
+    controller = MPKController(action_engine=engine)
+
+    controller._on_message(mido.Message("pitchwheel", pitch=-8192))
+
+    assert notified == [("joystick_x", -1.0)]
+    assert dispatched == []
+
+
+def test_on_message_uses_injected_dispatch(monkeypatch):
+    monkeypatch.setattr(mido, "get_input_names", lambda: ["MPK mini mk II 1"])
+    engine = ActionEngine()
+    calls = []
+    engine.trigger = lambda control: calls.append(control)
+    queued = []
+    controller = MPKController(action_engine=engine, dispatch=queued.append)
+
+    controller._on_message(mido.Message("note_on", note=32, velocity=100))
+
+    assert calls == []  # not run inline - handed to dispatch
+    queued[0]()
+    assert calls == ["pad_1"]
+
+
 def test_on_message_ignores_unmapped_message():
     engine = ActionEngine()
     calls = []

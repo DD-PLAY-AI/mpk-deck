@@ -28,6 +28,7 @@ def test_midi_callbacks_reach_gui_thread(monkeypatch) -> None:
         app.processEvents()
 
     assert window._mini_view._pads["pad_1"]._glow.isEnabled()
-    assert window._expanded_view._joystick._y == 1.0
+    # Y is negated for the widget: "push up" (value 1.0) moves the handle up (screen -y).
+    assert window._expanded_view._joystick._y == -1.0
     assert window._expanded_view._knobs["knob_1"]._value == 0.0
     window.close()

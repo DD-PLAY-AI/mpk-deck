@@ -111,10 +111,12 @@ class PadButton(QPushButton):
         self._glow.setEnabled(False)
         super().mouseReleaseEvent(event)
 
-    def flash(self, ok: bool) -> None:
-        self._glow.setColor(QColor(0, 200, 90) if ok else QColor(220, 60, 60))
+    def flash(self) -> None:
+        """Brief accent glow when the control fires from hardware - same look as a
+        mouse press, since a MIDI trigger is momentary and has no release event."""
+        self._glow.setColor(QColor(self._accent_hex))
         self._glow.setEnabled(True)
-        self._flash_timer.start(200)
+        self._flash_timer.start(180)
 
 
 class MiniView(WindowGripMixin, QWidget):
@@ -147,10 +149,10 @@ class MiniView(WindowGripMixin, QWidget):
             pad.set_accent(accent_hex)
         self._apply_style()
 
-    def flash_control(self, control: str, ok: bool) -> None:
+    def flash_control(self, control: str) -> None:
         pad = self._pads.get(control)
         if pad is not None:
-            pad.flash(ok)
+            pad.flash()
 
     def _apply_style(self) -> None:
         accent_rgb = hex_to_rgb_str(self._accent_hex)

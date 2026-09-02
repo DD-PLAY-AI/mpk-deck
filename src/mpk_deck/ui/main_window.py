@@ -114,7 +114,11 @@ class MainWindow(QMainWindow):
         self._joystick_timer = QTimer(self)
         self._joystick_timer.timeout.connect(self._on_joystick_timer_tick)
 
-        self._midi = MPKController(self._engine, on_bank_b_pad=self._on_bank_b_pad)
+        self._midi = MPKController(
+            self._engine,
+            on_bank_b_pad=self._on_bank_b_pad,
+            dispatch=lambda fn: QTimer.singleShot(0, self, fn),  # run engine calls on the GUI thread
+        )
         self._midi_detected = self._midi.start()
 
         self._midi_status_dot = MidiStatusDot(self)
@@ -137,7 +141,6 @@ class MainWindow(QMainWindow):
         self._expanded_view.control_activated.connect(self._on_control_activated)
         self._expanded_view.control_configure_requested.connect(self._on_control_configure_requested)
         self._expanded_view.decorative_button_activated.connect(self._on_decorative_button)
-        self._expanded_view.knob_locked_activated.connect(self._on_knob_locked)
 
         container = QWidget(self)
         layout = QVBoxLayout(container)
@@ -317,11 +320,13 @@ class MainWindow(QMainWindow):
         self._engine.trigger(control)
 
     def _on_trigger(self, control: str, ok: bool) -> None:
-        QTimer.singleShot(0, self, lambda: self._apply_trigger_flash(control, ok))
+        # `ok` (handler success/failure) is ignored - the flash is just press feedback,
+        # the same accent glow a mouse click gives.
+        QTimer.singleShot(0, self, lambda: self._apply_trigger_flash(control))
 
-    def _apply_trigger_flash(self, control: str, ok: bool) -> None:
+    def _apply_trigger_flash(self, control: str) -> None:
         view = self._mini_view if self._mode == "mini" else self._expanded_view
-        view.flash_control(control, ok)
+        view.flash_control(control)
 
     def _on_bank_b_pad(self) -> None:
         QTimer.singleShot(0, self, self._show_bank_hint)
@@ -334,12 +339,6 @@ class MainWindow(QMainWindow):
         QMessageBox.information(
             self, "설정 불가",
             "이 버튼은 MIDI를 전송하지 않아 기능을 설정할 수 없습니다.",
-        )
-
-    def _on_knob_locked(self) -> None:
-        QMessageBox.information(
-            self, "설정 불가",
-            "1번 노브는 사용할 수 없습니다.",
         )
 
     def _on_bank_changed(self, bank_id: str) -> None:
@@ -359,8 +358,10 @@ class MainWindow(QMainWindow):
     def _apply_joystick_continuous(self, control: str, value: float) -> None:
         if control in self._joystick_values:
             self._joystick_values[control] = value
+            # Negate Y for the widget: hardware "push up" sends a rising value, and
+            # the joystick handle should move up (screen -y) to match.
             self._expanded_view.set_joystick_deflection(
-                self._joystick_values["joystick_x"], self._joystick_values["joystick_y"]
+                self._joystick_values["joystick_x"], -self._joystick_values["joystick_y"]
             )
             any_active = any(v != 0.0 for v in self._joystick_values.values())
             if any_active and not self._joystick_timer.isActive():

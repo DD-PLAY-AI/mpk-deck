@@ -165,6 +165,33 @@ def test_set_continuous_without_on_continuous_callback_does_not_raise():
     engine.set_continuous("joystick_x", 0.5)
 
 
+def test_notify_continuous_fires_callback_but_not_the_handler():
+    notified = []
+    dispatched = []
+    engine = ActionEngine(on_continuous=lambda c, v: notified.append((c, v)))
+    engine.register_continuous("scroll_vertical", lambda params, value: dispatched.append(value))
+    engine.load_banks(
+        {"b": [Binding(control="joystick_y", type="continuous", action="scroll_vertical", params={})]}, {}, "b"
+    )
+
+    engine.notify_continuous("joystick_y", 0.4)
+
+    assert notified == [("joystick_y", 0.4)]
+    assert dispatched == []  # handler is NOT run - the MainWindow timer owns that
+
+
+def test_set_continuous_swallows_handler_exception(caplog):
+    engine = ActionEngine()
+    engine.register_continuous("boom", lambda params, value: (_ for _ in ()).throw(RuntimeError("com blew up")))
+    engine.load_banks(
+        {"b": [Binding(control="knob_1", type="continuous", action="boom", params={})]}, {}, "b"
+    )
+
+    engine.set_continuous("knob_1", 0.5)  # must not raise
+
+    assert "continuous handler for boom failed" in caplog.text
+
+
 def test_on_trigger_reports_success_for_clean_handler():
     calls = []
     engine = ActionEngine(on_trigger=lambda control, ok: calls.append((control, ok)))

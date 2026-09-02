@@ -6,13 +6,25 @@
 
 이 파일은 모든 에이전트(Claude·Codex) 공용이다. mpk-deck 코드 작업 전에 읽을 것.
 
-> **드리프트 주의 (2026-09-02):** 하드웨어 MIDI 매핑 섹션은 갱신됨(신뢰).
-> 그러나 UI 섹션 일부(`action_config_dialog` 다이얼로그, knob_1 `_locked`,
-> flash 초록/빨강, 아이콘 표시)는 2026-09-02 Batch B/C 이전 상태를 설명 —
-> 다이얼로그는 글래스 카드로 전면 재작성, `ui/action_icons.py`(SVG 액션
-> 아이콘 + 자동 라벨), `Binding.label`/`icon` 필드, `core/icon_gen.py`(AI
-> 아이콘)가 추가됨. **이 라운드는 아직 실기 미검증** — 검증 후 이 섹션 전면
-> 갱신 예정. 코드가 최종 신뢰원.
+> **드리프트 주의 (2026-09-02/03):** 하드웨어 MIDI 매핑 섹션 + 아래 Workspace
+> Layouts 항목은 갱신됨(신뢰). 그러나 이 파일의 **UI 상세 서술 일부는 아직
+> 2026-09-02 batch B/C 이전 상태**를 설명한다 — 실제로는:
+> - `ui/action_config_dialog.py`는 프레임리스 글래스 "patch card"로 전면
+>   재작성됨(painted `_ControlChip`, 아이콘 타일 액션 픽커, sensitivity 슬라이더,
+>   접이식 NL 섹션). `_dialog_qss(accent_hex, dark)` 공유.
+> - `ui/action_icons.py`는 `{accent}`/`{neutral}` SVG 템플릿 + `QSvgRenderer`
+>   (QPainter 글리프 함수 폐기). `_ACTION_SVG`/`_ACTION_SVG_KNOB`.
+> - trigger flash는 성공/실패 초록·빨강이 아니라 하드웨어 입력 시 마우스
+>   클릭과 같은 accent glow(`flash()`, `ok` 없음). knob_1 `_locked` 배선 전부 삭제.
+> - `Binding`에 `label`(사용자 지정 이름) + `icon`(커스텀 SVG body) 필드.
+>   `MiniView`/`ExpandedView.update_bindings(bindings, bank_names, layouts)`.
+> - `core/icon_gen.py`(Claude Haiku SVG 아이콘 + `is_safe_svg_body` denylist).
+> - E: `KnobWidget.wheelEvent`(휠 → 값 누적) → `ExpandedView.knob_scrolled` →
+>   `MainWindow._on_knob_scrolled` → `engine.set_continuous`.
+>
+> **batch B/C/D/E 전부 커밋됨(39 commits ahead, 미푸시), 실기 미검증.** 변경의
+> 배경·근거는 `C:\DC\DD\docs\DECISIONS.md` 2026-09-02 항목. 코드가 최종
+> 신뢰원. 실기 검증 후 이 파일 UI 상세를 전면 갱신할 것.
 
 ---
 

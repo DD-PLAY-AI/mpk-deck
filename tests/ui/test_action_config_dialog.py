@@ -102,3 +102,33 @@ def test_custom_icon_loads_clears_and_round_trips():
     dialog._clear_custom_icon()
     assert dialog._custom_icon == ""
     assert dialog.result_binding().icon == ""
+
+
+def test_apply_layout_binding_round_trips(monkeypatch):
+    from mpk_deck.core.layout_store import Layout
+    import mpk_deck.ui.action_config_dialog as acd
+    from mpk_deck.core.action_registry import Binding
+
+    monkeypatch.setattr(acd, "load_layouts", lambda: {"coding": Layout(name="코딩", items=[])})
+    existing = Binding("pad_1", "trigger", "apply_layout", {"layout_id": "coding"})
+    dialog = acd.ActionConfigDialog("pad_1", existing)
+    assert dialog._current_action() == "apply_layout"
+    assert dialog.result_binding().params == {"layout_id": "coding"}
+
+
+def test_apply_layout_with_no_layouts_yields_empty_id(monkeypatch):
+    import mpk_deck.ui.action_config_dialog as acd
+
+    monkeypatch.setattr(acd, "load_layouts", lambda: {})
+    dialog = acd.ActionConfigDialog("pad_1")
+    dialog._select_action("apply_layout")
+    assert dialog.result_binding().params == {"layout_id": ""}
+
+
+def test_apply_layout_keeps_the_label_field_enabled(monkeypatch):
+    import mpk_deck.ui.action_config_dialog as acd
+
+    monkeypatch.setattr(acd, "load_layouts", lambda: {})
+    dialog = acd.ActionConfigDialog("pad_1")
+    dialog._select_action("apply_layout")
+    assert dialog._label_edit.isEnabled() is True

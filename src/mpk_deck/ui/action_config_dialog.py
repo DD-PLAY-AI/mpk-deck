@@ -2,6 +2,7 @@ from PySide6.QtCore import QPointF, QSize, Qt
 from PySide6.QtGui import QColor, QIcon, QPainter, QPen
 from PySide6.QtWidgets import (
     QButtonGroup,
+    QComboBox,
     QDialog,
     QFileDialog,
     QFrame,
@@ -25,6 +26,7 @@ from mpk_deck.core.action_registry import Binding
 from mpk_deck.core.nl_action import parse_nl_action
 from mpk_deck.core.program_finder import list_installed_programs
 from mpk_deck.core.icon_gen import generate_icon_svg
+from mpk_deck.core.layout_store import load_layouts
 from mpk_deck.ui.accent import hex_to_rgb_str, mix
 from mpk_deck.ui.action_icons import ACTION_KO_LABEL, action_label, action_pixmap, render_svg_icon
 from mpk_deck.ui.knob_geometry import needle_angle
@@ -36,6 +38,7 @@ ACTION_CHOICES = [
     ("set_system_volume", "\U0001f50a", "System Volume"),
     ("scroll_horizontal", "↔", "Scroll Horizontal"),
     ("scroll_vertical", "↕", "Scroll Vertical"),
+    ("apply_layout", "\U0001f5c2", "Layout"),
     ("switch_bank", "➕", "Add Bank"),
 ]
 ACTION_GLYPHS = {name: glyph for name, glyph, _ in ACTION_CHOICES}
@@ -47,6 +50,7 @@ ACTION_TYPE = {
     "set_system_volume": "continuous",
     "scroll_horizontal": "continuous",
     "scroll_vertical": "continuous",
+    "apply_layout": "trigger",
     "switch_bank": "trigger",
 }
 PARAM_KEY = {
@@ -56,6 +60,7 @@ PARAM_KEY = {
     "set_system_volume": None,
     "scroll_horizontal": None,
     "scroll_vertical": None,
+    "apply_layout": None,
     "switch_bank": None,
 }
 
@@ -79,11 +84,13 @@ def _dialog_qss(accent_hex: str, dark: bool) -> str:
         ink, muted = "#f2f4f8", "rgba(242,244,248,130)"
         field_bg, field_line = "rgba(255,255,255,16)", "rgba(255,255,255,36)"
         tile_bg, tile_line = "rgba(255,255,255,13)", "rgba(255,255,255,30)"
+        popup_bg = "#23262f"
     else:
         card_bg = "qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 rgba(255,255,255,240), stop:1 rgba(235,240,255,246))"
         ink, muted = "#23242b", "rgba(35,36,43,140)"
         field_bg, field_line = "rgba(255,255,255,180)", "rgba(120,120,140,80)"
         tile_bg, tile_line = "rgba(255,255,255,140)", "rgba(120,120,140,70)"
+        popup_bg = "#f4f6fb"
     return f"""
 QWidget#card {{
     background: {card_bg};
@@ -154,6 +161,18 @@ QScrollBar:vertical {{ width: 8px; background: transparent; margin: 2px; }}
 QScrollBar::handle:vertical {{ background: {field_line}; border-radius: 4px; min-height: 24px; }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; }}
+
+QScrollArea {{ background: transparent; border: none; }}
+QCheckBox {{ color: {ink}; }}
+QComboBox {{
+    background: {field_bg}; border: 1px solid {field_line}; border-radius: 6px;
+    color: {ink}; padding: 5px 8px; font-size: 12px;
+}}
+QComboBox:focus {{ border: 1px solid {accent_hex}; }}
+QComboBox QAbstractItemView {{
+    background: {popup_bg}; color: {ink}; border: 1px solid {field_line};
+    selection-background-color: {accent_hex}; selection-color: white;
+}}
 """
 
 
@@ -464,6 +483,7 @@ class ActionConfigDialog(QDialog):
         self._add_note_page("set_system_volume", "시스템 볼륨", "노브를 돌리면 시스템 볼륨이 따라갑니다. 추가 설정 없음.")
         self._sensitivity_slider = self._add_sensitivity_page()
         self._bank_name_edit = self._add_line_page("switch_bank", "뱅크 이름", "예: 트레이딩", "이 컨트롤이 해당 뱅크로 영구 전환됩니다.")
+        self._add_layout_page()
 
         # both scroll actions share the sensitivity page; everything else is 1:1
         self._page_for_action = {
@@ -474,8 +494,51 @@ class ActionConfigDialog(QDialog):
             "scroll_horizontal": 4,
             "scroll_vertical": 4,
             "switch_bank": 5,
+            "apply_layout": 6,
         }
         return frame
+
+    def _add_layout_page(self) -> None:
+        page, layout = self._page_shell("레이아웃")
+        self._layout_combo = QComboBox()
+        self._reload_layout_combo()
+        row = QHBoxLayout()
+        save_new = QPushButton("새로 저장…")
+        save_new.setObjectName("ghost")
+        edit = QPushButton("편집…")
+        edit.setObjectName("ghost")
+        save_new.clicked.connect(lambda: self._open_capture(None))
+        edit.clicked.connect(lambda: self._open_capture(self._layout_combo.currentData()))
+        row.addWidget(self._layout_combo, stretch=1)
+        row.addWidget(save_new)
+        row.addWidget(edit)
+        layout.addLayout(row)
+        hint = QLabel("저장된 레이아웃을 고르거나 현재 창 배치를 새로 저장하세요.")
+        hint.setObjectName("hint")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+        layout.addStretch(1)
+        self._param_stack.addWidget(page)
+
+    def _reload_layout_combo(self) -> None:
+        current = self._layout_combo.currentData() if self._layout_combo.count() else None
+        self._layout_combo.clear()
+        for layout_id, layout in load_layouts().items():
+            self._layout_combo.addItem(layout.name, layout_id)
+        if current is not None:
+            i = self._layout_combo.findData(current)
+            if i >= 0:
+                self._layout_combo.setCurrentIndex(i)
+
+    def _open_capture(self, existing_id) -> None:
+        from mpk_deck.ui.layout_capture_dialog import LayoutCaptureDialog
+
+        dialog = LayoutCaptureDialog(existing_id, accent_hex=self._accent_hex, parent=self)
+        if dialog.exec() and dialog.result_layout_id():
+            self._reload_layout_combo()
+            i = self._layout_combo.findData(dialog.result_layout_id())
+            if i >= 0:
+                self._layout_combo.setCurrentIndex(i)
 
     def _page_shell(self, label_text: str) -> tuple[QWidget, QVBoxLayout]:
         page = QWidget()
@@ -676,6 +739,11 @@ class ActionConfigDialog(QDialog):
             bank_id = binding.params.get("bank_id", "")
             self._bank_name_edit.setText(self._bank_names.get(bank_id, ""))
             return
+        if binding.action == "apply_layout":
+            i = self._layout_combo.findData(binding.params.get("layout_id", ""))
+            if i >= 0:
+                self._layout_combo.setCurrentIndex(i)
+            return
         if binding.action in ("scroll_horizontal", "scroll_vertical"):
             self._sensitivity_slider.setValue(round(float(binding.params.get("sensitivity", 1.0)) * 10))
             return
@@ -724,6 +792,11 @@ class ActionConfigDialog(QDialog):
             return Binding(
                 control=self._control, type="continuous", action=action,
                 params={"sensitivity": sensitivity}, label=label, icon=icon,
+            )
+        if action == "apply_layout":
+            return Binding(
+                control=self._control, type="trigger", action="apply_layout",
+                params={"layout_id": self._layout_combo.currentData() or ""}, label=label, icon=icon,
             )
         key = PARAM_KEY.get(action)
         edit = self._param_edit_for(action)

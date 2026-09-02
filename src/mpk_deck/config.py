@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from PySide6.QtCore import QSettings
@@ -9,6 +10,16 @@ APP_NAME = "mpk-deck"
 
 ACCENT_HEX = "#3a6df0"
 ACCENT_RGB = "58,109,240"
+
+
+def user_data_dir() -> Path:
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        return Path(appdata) / APP_NAME
+    return Path.home() / ".mpk-deck"
+
+
+LAYOUTS_PATH = user_data_dir() / "layouts.yaml"
 
 
 def _get_settings(ini_path: str | None = None) -> QSettings:

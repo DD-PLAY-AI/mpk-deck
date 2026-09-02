@@ -1,10 +1,14 @@
+from pathlib import Path
+
 from mpk_deck.config import (
     ACCENT_HEX,
+    LAYOUTS_PATH,
     load_last_accent,
     load_last_always_on_top,
     load_last_knob_style,
     load_last_mode,
     load_last_theme,
+    user_data_dir,
     save_last_accent,
     save_last_always_on_top,
     save_last_knob_style,
@@ -66,3 +70,19 @@ def test_save_and_load_last_knob_style_round_trip(tmp_path):
 def test_load_last_knob_style_defaults_to_needle(tmp_path):
     ini_path = str(tmp_path / "settings.ini")
     assert load_last_knob_style(ini_path=ini_path) == "B"
+
+
+def test_user_data_dir_uses_appdata(monkeypatch):
+    monkeypatch.setenv("APPDATA", r"C:\Users\x\AppData\Roaming")
+    assert user_data_dir() == Path(r"C:\Users\x\AppData\Roaming") / "mpk-deck"
+
+
+def test_user_data_dir_falls_back_to_home_without_appdata(monkeypatch):
+    monkeypatch.delenv("APPDATA", raising=False)
+    assert user_data_dir() == Path.home() / ".mpk-deck"
+
+
+def test_layouts_path_is_under_user_data_dir(monkeypatch):
+    monkeypatch.setenv("APPDATA", r"C:\Users\x\AppData\Roaming")
+    assert LAYOUTS_PATH.name == "layouts.yaml"
+    assert LAYOUTS_PATH.parent.name == "mpk-deck"

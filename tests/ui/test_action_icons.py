@@ -21,6 +21,11 @@ def test_program_name_from_path():
     assert program_name_from_path("") == ""
 
 
+def test_action_label_prefers_the_user_set_label():
+    b = Binding("pad_1", "trigger", "launch_program", {"path": "C:/x/spotify.exe"}, label="음악")
+    assert action_label(b) == "음악"
+
+
 def test_action_label_launch_program_uses_program_name():
     b = Binding("pad_1", "trigger", "launch_program", {"path": "C:/x/spotify.exe"})
     assert action_label(b) == "Spotify"

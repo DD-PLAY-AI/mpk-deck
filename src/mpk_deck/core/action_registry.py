@@ -19,6 +19,7 @@ class Binding:
     type: BindingType
     action: str
     params: dict = field(default_factory=dict)
+    label: str = ""  # user-set name shown on the deck; "" = auto (see ui/action_icons.action_label)
 
 
 DEFAULT_BANK_ID = "bank_a"
@@ -153,7 +154,11 @@ def save_config(path: str | Path, config: DeckConfig) -> None:
             for bank_id, bank in config.banks.items()
         },
     }
-    text = yaml.safe_dump(data, sort_keys=False)
+    for bank in data["banks"].values():
+        for bd in bank["bindings"]:
+            if not bd.get("label"):
+                bd.pop("label", None)  # keep the file clean - "" is the default
+    text = yaml.safe_dump(data, sort_keys=False, allow_unicode=True)  # keep Korean labels readable
     # Atomic write: a crash mid-write must not truncate an existing config -
     # load_config falls back to defaults on a broken file, which silently drops
     # every binding. Write a sibling temp file, fsync, then os.replace (atomic
@@ -180,4 +185,5 @@ def _parse_binding(entry: dict) -> Binding:
     params = entry.get("params") or {}
     if not isinstance(params, dict):
         raise ValueError("params must be a mapping")
-    return Binding(control=control, type=btype, action=action, params=params)
+    label = entry.get("label") or ""
+    return Binding(control=control, type=btype, action=action, params=params, label=str(label))

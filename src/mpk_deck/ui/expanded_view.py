@@ -462,7 +462,10 @@ class ExpandedView(WindowGripMixin, QWidget):
             if binding is None:
                 knob.set_binding(None, "")
             else:
-                knob.set_binding(action_pixmap(binding, 40, self._accent_hex), action_label(binding, self._bank_names))
+                knob.set_binding(
+                    action_pixmap(binding, 40, self._accent_hex, for_knob=True),
+                    action_label(binding, self._bank_names),
+                )
         for i, key in self._keys.items():
             binding = bindings.get(f"key_{i}")
             key.set_bound(binding is not None, action_label(binding, self._bank_names) if binding else "")

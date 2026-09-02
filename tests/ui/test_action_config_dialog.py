@@ -66,3 +66,17 @@ def test_switch_bank_binding_locks_the_other_tiles():
 def test_new_binding_defaults_to_first_action():
     dialog = ActionConfigDialog("pad_5")
     assert dialog._current_action() == ACTION_CHOICES[0][0]
+
+
+def test_label_field_prefills_and_round_trips():
+    existing = Binding("pad_1", "trigger", "open_url", {"url": "https://x"}, label="내 링크")
+    dialog = ActionConfigDialog("pad_1", existing)
+    assert dialog._label_edit.text() == "내 링크"
+    dialog._label_edit.setText("  새 이름  ")
+    assert dialog.result_binding().label == "새 이름"  # trimmed
+
+
+def test_empty_label_field_yields_empty_label():
+    dialog = ActionConfigDialog("pad_1")
+    dialog._select_action("open_url")
+    assert dialog.result_binding().label == ""

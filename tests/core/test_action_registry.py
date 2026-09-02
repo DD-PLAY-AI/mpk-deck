@@ -211,6 +211,33 @@ def test_save_then_load_round_trips_new_format(tmp_path):
     assert load_config(path) == config
 
 
+def test_binding_label_round_trips_and_empty_labels_are_omitted(tmp_path):
+    path = tmp_path / "actions.yaml"
+    config = DeckConfig(
+        active_bank="bank_a",
+        switch_bindings={},
+        banks={
+            "bank_a": Bank(
+                name="Home",
+                bindings=[
+                    Binding(control="pad_1", type="trigger", action="open_url", params={"url": "u"}, label="내 링크"),
+                    Binding(control="pad_2", type="trigger", action="open_url", params={"url": "v"}),
+                    *default_joystick_bindings(),
+                ],
+            )
+        },
+    )
+    save_config(path, config)
+    text = path.read_text(encoding="utf-8")
+    assert "내 링크" in text  # allow_unicode - not \uXXXX escaped
+    assert text.count("label:") == 1  # the empty one is dropped
+
+    back = load_config(path)
+    by_control = {b.control: b for b in back.banks["bank_a"].bindings}
+    assert by_control["pad_1"].label == "내 링크"
+    assert by_control["pad_2"].label == ""
+
+
 def test_save_config_failure_leaves_existing_file_intact(tmp_path, monkeypatch):
     import mpk_deck.core.action_registry as reg
 

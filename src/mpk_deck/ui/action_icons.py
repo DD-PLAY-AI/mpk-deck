@@ -1,16 +1,19 @@
 """Icons and labels for a bound action, shown on the deck's pads/knobs/keys.
 
 Resolution order for a pad/knob icon:
-  1. a per-binding custom icon  (added in C2 - not here yet)
-  2. launch_program with a real path -> the program's own Windows icon
-  3. the action's built-in glyph, painted here in the deck's line language
-     (thin strokes, one accent + one neutral tone - not flat, not emoji)
+  1. launch_program with a real path -> the program's own Windows icon
+  2. the action's built-in SVG glyph, rendered here in the deck's line language
+     (one accent + one neutral tone, thin round strokes - not flat, not emoji)
+
+The built-ins are SVG templates with {accent} / {neutral} slots, rendered through
+QSvgRenderer - the same path C2's AI-made custom icons will use.
 """
 
 from pathlib import Path
 
-from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QPainter, QPixmap
+from PySide6.QtSvg import QSvgRenderer
 
 from mpk_deck.core.action_registry import Binding
 
@@ -26,6 +29,85 @@ ACTION_KO_LABEL = {
 
 _NEUTRAL = "#8a8f9c"
 
+# viewBox 0 0 64 64. {accent} = the action, {neutral} = the context it acts on.
+_ACTION_SVG = {
+    "open_url": (
+        '<path d="M38 16 H30 a4 4 0 0 0 -4 4 V44 a4 4 0 0 0 4 4 H26" fill="none" stroke="{neutral}" '
+        'stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>'
+        '<path d="M26 44 h14 a4 4 0 0 0 4 -4 V30" fill="none" stroke="{neutral}" stroke-width="5" '
+        'stroke-linecap="round" stroke-linejoin="round"/>'
+        '<path d="M32 32 L50 14 M40 14 H50 V24" fill="none" stroke="{accent}" stroke-width="5" '
+        'stroke-linecap="round" stroke-linejoin="round"/>'
+    ),
+    "focus_window": (
+        '<rect x="24" y="12" width="28" height="24" rx="4" fill="none" stroke="{neutral}" stroke-width="5"/>'
+        '<rect x="12" y="26" width="30" height="26" rx="4" fill="none" stroke="{accent}" stroke-width="5"/>'
+        '<path d="M14 33 h26" stroke="{accent}" stroke-width="6" stroke-linecap="round"/>'
+    ),
+    "set_system_volume": (
+        '<path d="M12 26 h9 l12 -10 v32 l-12 -10 h-9 z" fill="{neutral}" stroke="{neutral}" '
+        'stroke-width="4" stroke-linejoin="round"/>'
+        '<path d="M40 24 a12 12 0 0 1 0 16" fill="none" stroke="{accent}" stroke-width="5" stroke-linecap="round"/>'
+        '<path d="M46 17 a22 22 0 0 1 0 30" fill="none" stroke="{accent}" stroke-width="5" stroke-linecap="round"/>'
+    ),
+    "scroll_horizontal": (
+        '<rect x="10" y="18" width="44" height="28" rx="5" fill="none" stroke="{neutral}" stroke-width="5"/>'
+        '<path d="M20 32 H44 M25 25 L18 32 L25 39 M39 25 L46 32 L39 39" fill="none" stroke="{accent}" '
+        'stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>'
+    ),
+    "scroll_vertical": (
+        '<rect x="18" y="10" width="28" height="44" rx="5" fill="none" stroke="{neutral}" stroke-width="5"/>'
+        '<path d="M32 20 V44 M25 25 L32 18 L39 25 M25 39 L32 46 L39 39" fill="none" stroke="{accent}" '
+        'stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>'
+    ),
+    "switch_bank": (
+        '<rect x="9" y="20" width="20" height="24" rx="4" fill="none" stroke="{neutral}" stroke-width="5"/>'
+        '<rect x="35" y="20" width="20" height="24" rx="4" fill="none" stroke="{neutral}" stroke-width="5"/>'
+        '<path d="M27 27 h10 M33 22 l5 5 l-5 5" fill="none" stroke="{accent}" stroke-width="4.5" '
+        'stroke-linecap="round" stroke-linejoin="round"/>'
+        '<path d="M37 41 h-10 M31 36 l-5 5 l5 5" fill="none" stroke="{accent}" stroke-width="4.5" '
+        'stroke-linecap="round" stroke-linejoin="round"/>'
+    ),
+    "launch_program": (
+        '<rect x="12" y="12" width="40" height="40" rx="10" fill="none" stroke="{neutral}" stroke-width="5"/>'
+        '<path d="M27 24 L42 32 L27 40 Z" fill="{accent}" stroke="{accent}" stroke-width="4" stroke-linejoin="round"/>'
+    ),
+}
+
+# knob variant: accent mark only - the neutral frame is noise at ~18px and fights the needle
+_ACTION_SVG_KNOB = {
+    "open_url": (
+        '<path d="M24 32 L46 10 M34 10 H46 V22" fill="none" stroke="{accent}" stroke-width="6" '
+        'stroke-linecap="round" stroke-linejoin="round"/>'
+    ),
+    "focus_window": (
+        '<rect x="14" y="20" width="30" height="26" rx="4" fill="none" stroke="{accent}" stroke-width="6"/>'
+        '<path d="M16 28 h26" stroke="{accent}" stroke-width="7" stroke-linecap="round"/>'
+    ),
+    "set_system_volume": (
+        '<path d="M14 26 h9 l12 -10 v32 l-12 -10 h-9 z" fill="{accent}" stroke="{accent}" stroke-width="4" '
+        'stroke-linejoin="round"/>'
+        '<path d="M42 22 a14 14 0 0 1 0 20" fill="none" stroke="{accent}" stroke-width="6" stroke-linecap="round"/>'
+    ),
+    "scroll_horizontal": (
+        '<path d="M14 32 H50 M23 22 L13 32 L23 42 M41 22 L51 32 L41 42" fill="none" stroke="{accent}" '
+        'stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>'
+    ),
+    "scroll_vertical": (
+        '<path d="M32 14 V50 M22 23 L32 13 L42 23 M22 41 L32 51 L42 41" fill="none" stroke="{accent}" '
+        'stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>'
+    ),
+    "switch_bank": (
+        '<path d="M22 26 h20 M34 18 l9 8 l-9 8" fill="none" stroke="{accent}" stroke-width="6" '
+        'stroke-linecap="round" stroke-linejoin="round"/>'
+        '<path d="M42 42 h-20 M30 34 l-9 8 l9 8" fill="none" stroke="{accent}" stroke-width="6" '
+        'stroke-linecap="round" stroke-linejoin="round"/>'
+    ),
+    "launch_program": (
+        '<path d="M24 18 L48 32 L24 46 Z" fill="{accent}" stroke="{accent}" stroke-width="5" stroke-linejoin="round"/>'
+    ),
+}
+
 _app_icon_cache: dict[tuple[str, int], QPixmap] = {}
 
 
@@ -36,6 +118,8 @@ def program_name_from_path(path: str) -> str:
 
 
 def action_label(binding: Binding, bank_names: dict[str, str] | None = None) -> str:
+    if binding.label:
+        return binding.label
     if binding.action == "launch_program":
         path = binding.params.get("path", "")
         return program_name_from_path(path) if path else ACTION_KO_LABEL["launch_program"]
@@ -59,104 +143,30 @@ def app_icon_pixmap(path: str, size: int) -> QPixmap | None:
     return pm if not pm.isNull() else None
 
 
-def action_pixmap(binding: Binding, size: int, accent_hex: str) -> QPixmap:
-    """A `size`x`size` icon for this binding, at the current accent."""
+def render_svg_icon(svg_body: str, size: int, accent_hex: str, neutral_hex: str = _NEUTRAL) -> QPixmap:
+    """Render an {accent}/{neutral}-templated 64x64 SVG body to a `size`px pixmap.
+    Returns a blank (non-null) pixmap if the markup won't parse."""
+    markup = (
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">{svg_body}</svg>'
+    ).replace("{accent}", accent_hex).replace("{neutral}", neutral_hex)
+    pm = QPixmap(size, size)
+    pm.fill(Qt.GlobalColor.transparent)
+    renderer = QSvgRenderer(markup.encode("utf-8"))
+    if renderer.isValid():
+        painter = QPainter(pm)
+        renderer.render(painter)
+        painter.end()
+    return pm
+
+
+def action_pixmap(binding: Binding, size: int, accent_hex: str, *, for_knob: bool = False) -> QPixmap:
+    """A `size`x`size` icon for this binding at the current accent."""
     if binding.action == "launch_program":
         path = binding.params.get("path", "")
         if path:
             pm = app_icon_pixmap(path, size)
             if pm is not None:
                 return pm
-    pm = QPixmap(size, size)
-    pm.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(pm)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    paint_action_glyph(painter, binding.action, size, QColor(accent_hex), QColor(_NEUTRAL))
-    painter.end()
-    return pm
-
-
-def paint_action_glyph(painter: QPainter, action: str, size: int, accent: QColor, neutral: QColor) -> None:
-    """Draw the action's built-in glyph filling a `size`x`size` box at the origin."""
-    s = size
-    stroke = max(1.5, s * 0.08)
-    accent_pen = QPen(accent, stroke)
-    accent_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-    accent_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-    neutral_pen = QPen(neutral, stroke)
-    neutral_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-    neutral_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-    painter.setBrush(Qt.BrushStyle.NoBrush)
-
-    if action == "open_url":
-        # two linked capsules on a diagonal
-        for i, pen in ((0, neutral_pen), (1, accent_pen)):
-            painter.setPen(pen)
-            r = QRectF(s * (0.16 + i * 0.30), s * (0.30 + i * 0.14), s * 0.40, s * 0.26)
-            painter.save()
-            painter.translate(r.center())
-            painter.rotate(-45)
-            painter.translate(-r.center())
-            painter.drawRoundedRect(r, s * 0.13, s * 0.13)
-            painter.restore()
-
-    elif action == "focus_window":
-        body = QRectF(s * 0.18, s * 0.22, s * 0.64, s * 0.56)
-        painter.setPen(neutral_pen)
-        painter.drawRoundedRect(body, s * 0.06, s * 0.06)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(accent)
-        painter.drawRoundedRect(QRectF(body.left(), body.top(), body.width(), s * 0.14), s * 0.06, s * 0.06)
-
-    elif action == "set_system_volume":
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(neutral)
-        cone = QPainterPath()
-        cone.moveTo(s * 0.14, s * 0.40)
-        cone.lineTo(s * 0.30, s * 0.40)
-        cone.lineTo(s * 0.46, s * 0.24)
-        cone.lineTo(s * 0.46, s * 0.76)
-        cone.lineTo(s * 0.30, s * 0.60)
-        cone.lineTo(s * 0.14, s * 0.60)
-        cone.closeSubpath()
-        painter.drawPath(cone)
-        painter.setPen(accent_pen)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawArc(QRectF(s * 0.40, s * 0.28, s * 0.34, s * 0.44), -60 * 16, 120 * 16)
-        painter.drawArc(QRectF(s * 0.40, s * 0.16, s * 0.54, s * 0.68), -55 * 16, 110 * 16)
-
-    elif action in ("scroll_horizontal", "scroll_vertical"):
-        painter.setPen(neutral_pen)
-        if action == "scroll_horizontal":
-            painter.drawLine(QPointF(s * 0.24, s * 0.5), QPointF(s * 0.76, s * 0.5))
-            painter.setPen(accent_pen)
-            painter.drawPolyline([QPointF(s * 0.30, s * 0.34), QPointF(s * 0.16, s * 0.5), QPointF(s * 0.30, s * 0.66)])
-            painter.drawPolyline([QPointF(s * 0.70, s * 0.34), QPointF(s * 0.84, s * 0.5), QPointF(s * 0.70, s * 0.66)])
-        else:
-            painter.drawLine(QPointF(s * 0.5, s * 0.24), QPointF(s * 0.5, s * 0.76))
-            painter.setPen(accent_pen)
-            painter.drawPolyline([QPointF(s * 0.34, s * 0.30), QPointF(s * 0.5, s * 0.16), QPointF(s * 0.66, s * 0.30)])
-            painter.drawPolyline([QPointF(s * 0.34, s * 0.70), QPointF(s * 0.5, s * 0.84), QPointF(s * 0.66, s * 0.70)])
-
-    elif action == "switch_bank":
-        painter.setPen(neutral_pen)
-        painter.drawRoundedRect(QRectF(s * 0.16, s * 0.16, s * 0.52, s * 0.52), s * 0.08, s * 0.08)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(accent)
-        painter.drawRoundedRect(QRectF(s * 0.32, s * 0.32, s * 0.52, s * 0.52), s * 0.08, s * 0.08)
-
-    else:  # launch_program with no path, or an unknown action
-        painter.setPen(accent_pen)
-        painter.drawRoundedRect(QRectF(s * 0.2, s * 0.2, s * 0.6, s * 0.6), s * 0.12, s * 0.12)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(accent)
-        tri = QPainterPath()
-        tri.moveTo(s * 0.42, s * 0.36)
-        tri.lineTo(s * 0.66, s * 0.5)
-        tri.lineTo(s * 0.42, s * 0.64)
-        tri.closeSubpath()
-        painter.drawPath(tri)
-
-
-def action_qicon(binding: Binding, size: int, accent_hex: str) -> QIcon:
-    return QIcon(action_pixmap(binding, size, accent_hex))
+    table = _ACTION_SVG_KNOB if for_knob else _ACTION_SVG
+    body = table.get(binding.action) or _ACTION_SVG["launch_program"]
+    return render_svg_icon(body, size, accent_hex)

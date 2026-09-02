@@ -168,10 +168,8 @@ class _ControlChip(QWidget):
         self._action_pixmap = None
         self.setFixedSize(58, 58)
 
-    def set_action(self, action: str) -> None:
-        self._action_pixmap = action_pixmap(
-            Binding(control="", type="trigger", action=action, params={}), 26, self._accent
-        )
+    def set_action(self, binding: Binding) -> None:
+        self._action_pixmap = action_pixmap(binding, 26, self._accent)
         self.update()
 
     def paintEvent(self, event) -> None:  # noqa: N802 (Qt override)
@@ -247,6 +245,7 @@ class ActionConfigDialog(QDialog):
         root.addLayout(self._build_header(existing))
         root.addLayout(self._build_action_picker())
         root.addWidget(self._build_param_stack())
+        root.addLayout(self._build_name_field(existing))
         root.addWidget(self._build_nl_section())
         root.addLayout(self._build_buttons())
 
@@ -295,6 +294,19 @@ class ActionConfigDialog(QDialog):
         row.addWidget(self._chip)
         row.addLayout(meta, stretch=1)
         return row
+
+    def _build_name_field(self, existing: Binding | None) -> QVBoxLayout:
+        col = QVBoxLayout()
+        col.setSpacing(6)
+        label = QLabel("이름")
+        label.setObjectName("fieldLabel")
+        self._label_edit = QLineEdit()
+        self._label_edit.setPlaceholderText("비워두면 자동 (프로그램 이름 등)")
+        if existing is not None and existing.label:
+            self._label_edit.setText(existing.label)
+        col.addWidget(label)
+        col.addWidget(self._label_edit)
+        return col
 
     def _set_now_binding(self, existing: Binding | None) -> None:
         if existing is None:
@@ -458,6 +470,7 @@ class ActionConfigDialog(QDialog):
         search.textChanged.connect(filter_programs)
         program_list.itemClicked.connect(select_program)
         browse_button.clicked.connect(browse)
+        path_edit.textChanged.connect(lambda: self._refresh_chip(self._current_action()))
 
         browse_row = QHBoxLayout()
         browse_row.addWidget(path_edit, stretch=1)
@@ -548,7 +561,13 @@ class ActionConfigDialog(QDialog):
 
     def _on_action_selected(self, action: str) -> None:
         self._param_stack.setCurrentIndex(self._page_for_action.get(action, 0))
-        self._chip.set_action(action)
+        self._refresh_chip(action)
+
+    def _refresh_chip(self, action: str) -> None:
+        params = {}
+        if action == "launch_program" and self._path_edit.text().strip():
+            params = {"path": self._path_edit.text().strip()}
+        self._chip.set_action(Binding(control="", type="trigger", action=action, params=params))
 
     def _current_action(self) -> str:
         for name, tile in self._tiles.items():
@@ -598,17 +617,21 @@ class ActionConfigDialog(QDialog):
 
     def result_binding(self) -> Binding:
         action = self._current_action()
+        label = self._label_edit.text().strip()
         if self._locked or action == "switch_bank":
             # The real bank_id is assigned by the caller (new bank, or the existing
             # locked control's target) - this dialog only ever supplies the name.
-            return Binding(control=self._control, type="trigger", action="switch_bank", params={})
+            return Binding(control=self._control, type="trigger", action="switch_bank", params={}, label=label)
         if action in ("scroll_horizontal", "scroll_vertical"):
             sensitivity = max(SENSITIVITY_MIN, min(SENSITIVITY_MAX, self._sensitivity_slider.value() / 10))
-            return Binding(control=self._control, type="continuous", action=action, params={"sensitivity": sensitivity})
+            return Binding(
+                control=self._control, type="continuous", action=action,
+                params={"sensitivity": sensitivity}, label=label,
+            )
         key = PARAM_KEY.get(action)
         edit = self._param_edit_for(action)
         params = {key: edit.text()} if key and edit else {}
-        return Binding(control=self._control, type=ACTION_TYPE[action], action=action, params=params)
+        return Binding(control=self._control, type=ACTION_TYPE[action], action=action, params=params, label=label)
 
     def result_bank_name(self) -> str:
         return self._bank_name_edit.text().strip()

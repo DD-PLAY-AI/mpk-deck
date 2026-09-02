@@ -261,6 +261,7 @@ class KnobWidget(QFrame):
     7 o'clock, value 1.0 -> 5 o'clock, clockwise through 12."""
 
     configure_requested = Signal()
+    value_scrolled = Signal(float)
 
     def __init__(self, label: str, parent=None) -> None:
         super().__init__(parent)
@@ -280,6 +281,16 @@ class KnobWidget(QFrame):
     def set_value(self, value: float) -> None:
         self._value = max(0.0, min(1.0, value))
         self.update()
+
+    @staticmethod
+    def _apply_wheel_notches(current: float, notches: float) -> float:
+        return max(0.0, min(1.0, current + notches * 0.05))
+
+    def wheelEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        new_value = self._apply_wheel_notches(self._value, event.angleDelta().y() / 120)
+        self.set_value(new_value)
+        self.value_scrolled.emit(new_value)
+        event.accept()
 
     def set_binding(self, pixmap, tooltip: str) -> None:
         """A small action glyph behind the needle + a tooltip. `pixmap` None clears it."""
@@ -363,6 +374,7 @@ class ExpandedView(WindowGripMixin, QWidget):
     control_activated = Signal(str)
     control_configure_requested = Signal(str)
     decorative_button_activated = Signal(str)
+    knob_scrolled = Signal(str, float)
 
     def __init__(self, dark: bool = False, parent=None) -> None:
         super().__init__(parent, aspect=ASPECT, min_width=BASE_WIDTH)
@@ -402,6 +414,7 @@ class ExpandedView(WindowGripMixin, QWidget):
         for control in KNOB_LABELS_TOP + KNOB_LABELS_BOTTOM:
             knob = KnobWidget(control.split("_")[1].upper(), self)
             knob.configure_requested.connect(lambda c=control: self.control_configure_requested.emit(c))
+            knob.value_scrolled.connect(lambda value, c=control: self.knob_scrolled.emit(c, value))
             self._knobs[control] = knob
 
         # 25 keys (15 white + 10 black), C to C over 2 octaves + 1 — matches the physical keybed.

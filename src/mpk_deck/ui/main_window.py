@@ -154,6 +154,7 @@ class MainWindow(QMainWindow):
         self._expanded_view.control_activated.connect(self._on_control_activated)
         self._expanded_view.control_configure_requested.connect(self._on_control_configure_requested)
         self._expanded_view.decorative_button_activated.connect(self._on_decorative_button)
+        self._expanded_view.knob_scrolled.connect(self._on_knob_scrolled)
         self._expanded_view.update_bindings(self._bindings, self._bank_names, self._layouts)
 
         container = QWidget(self)
@@ -369,6 +370,9 @@ class MainWindow(QMainWindow):
 
     def _on_joystick_continuous(self, control: str, value: float) -> None:
         QTimer.singleShot(0, self, lambda: self._apply_joystick_continuous(control, value))
+
+    def _on_knob_scrolled(self, control: str, value: float) -> None:
+        self._engine.set_continuous(control, value)
 
     def _apply_joystick_continuous(self, control: str, value: float) -> None:
         if control in self._joystick_values:

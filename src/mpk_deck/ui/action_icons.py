@@ -16,6 +16,7 @@ from PySide6.QtGui import QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 
 from mpk_deck.core.action_registry import Binding
+from mpk_deck.core.icon_gen import is_safe_svg_body
 
 ACTION_KO_LABEL = {
     "launch_program": "프로그램",
@@ -145,7 +146,9 @@ def app_icon_pixmap(path: str, size: int) -> QPixmap | None:
 
 def render_svg_icon(svg_body: str, size: int, accent_hex: str, neutral_hex: str = _NEUTRAL) -> QPixmap | None:
     """Render an {accent}/{neutral}-templated 64x64 SVG body to a `size`px pixmap.
-    Returns None if the markup won't parse."""
+    Returns None if the body fails the safety check or the markup won't parse."""
+    if not is_safe_svg_body(svg_body):
+        return None
     markup = (
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">{svg_body}</svg>'
     ).replace("{accent}", accent_hex).replace("{neutral}", neutral_hex)

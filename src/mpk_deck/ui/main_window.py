@@ -45,6 +45,8 @@ STATUS_DOT_MARGIN = 10
 MINI_DEFAULT_WIDTH = 320  # launch compact in mini mode - roughly the expanded view's pad cluster
 EXPANDED_DEFAULT_WIDTH = 680
 JOYSTICK_TIMER_INTERVAL_MS = 50  # 20Hz repeat-while-held; only runs while deflected
+JOYSTICK_DEADZONE = 0.06  # snap near-centre axis values to 0 - a springy pot never rests exactly at 0,
+# and if a recapture were wrong and an axis rested mid-range this stops a runaway idle scroll
 
 
 def build_action_engine(config: DeckConfig, on_bank_changed, on_continuous, on_trigger) -> ActionEngine:
@@ -359,6 +361,8 @@ class MainWindow(QMainWindow):
 
     def _apply_joystick_continuous(self, control: str, value: float) -> None:
         if control in self._joystick_values:
+            if abs(value) < JOYSTICK_DEADZONE:
+                value = 0.0
             self._joystick_values[control] = value
             # Negate Y for the widget: hardware "push up" sends a rising value, and
             # the joystick handle should move up (screen -y) to match.

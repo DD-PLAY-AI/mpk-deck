@@ -230,6 +230,7 @@ class ActionConfigDialog(QDialog):
         self._bank_names = bank_names or {}
         self._accent_hex = accent_hex
         self._locked = existing is not None and existing.action == "switch_bank"
+        self._drag_offset = None
 
         card = QWidget(self)
         card.setObjectName("card")
@@ -249,8 +250,6 @@ class ActionConfigDialog(QDialog):
         root.addLayout(self._build_name_field(existing))
         root.addWidget(self._build_nl_section())
         root.addLayout(self._build_buttons())
-
-        self._drag_offset = None
 
         if existing is not None:
             self._apply_binding(existing)
@@ -322,7 +321,8 @@ class ActionConfigDialog(QDialog):
         self._icon_ai_toggle.setObjectName("nlToggle")
         self._icon_ai_toggle.setText("✨ AI로 만들기")
         self._icon_ai_toggle.setCheckable(True)
-        self._icon_ai_toggle.toggled.connect(lambda c: self._icon_ai_row.setVisible(c))
+        self._icon_ai_toggle.toggled.connect(self._on_icon_ai_toggled)
+        self._icon_default_btn = default_btn
         icon_row = QHBoxLayout()
         icon_row.setSpacing(8)
         icon_row.addWidget(self._icon_preview)
@@ -352,6 +352,19 @@ class ActionConfigDialog(QDialog):
         col.addWidget(self._icon_error)
         self._refresh_icon_preview()
         return col
+
+    def _on_icon_ai_toggled(self, checked: bool) -> None:
+        self._icon_ai_row.setVisible(checked)
+        self.layout().activate()
+        self.resize(self.width(), self.sizeHint().height())
+
+    def _set_metadata_enabled(self, enabled: bool) -> None:
+        """switch_bank has no slot for a custom label/icon (its label is the bank
+        name), so grey those controls out rather than silently discarding them."""
+        for w in (self._label_edit, self._icon_default_btn, self._icon_ai_toggle, self._icon_preview):
+            w.setEnabled(enabled)
+        if not enabled and self._icon_ai_toggle.isChecked():
+            self._icon_ai_toggle.setChecked(False)
 
     def _clear_custom_icon(self) -> None:
         self._custom_icon = ""
@@ -639,6 +652,7 @@ class ActionConfigDialog(QDialog):
 
     def _on_action_selected(self, action: str) -> None:
         self._param_stack.setCurrentIndex(self._page_for_action.get(action, 0))
+        self._set_metadata_enabled(action != "switch_bank")
         self._refresh_chip(action)
         self._refresh_icon_preview()
 
@@ -701,11 +715,10 @@ class ActionConfigDialog(QDialog):
         label = self._label_edit.text().strip()
         icon = self._custom_icon
         if self._locked or action == "switch_bank":
-            # The real bank_id is assigned by the caller (new bank, or the existing
-            # locked control's target) - this dialog only ever supplies the name.
-            return Binding(
-                control=self._control, type="trigger", action="switch_bank", params={}, label=label, icon=icon
-            )
+            # The real bank_id is assigned by the caller. switch_bank has no slot
+            # for a custom label/icon (its label is the bank name) - the UI greys
+            # those fields out, so don't carry them here either.
+            return Binding(control=self._control, type="trigger", action="switch_bank", params={})
         if action in ("scroll_horizontal", "scroll_vertical"):
             sensitivity = max(SENSITIVITY_MIN, min(SENSITIVITY_MAX, self._sensitivity_slider.value() / 10))
             return Binding(
@@ -714,7 +727,7 @@ class ActionConfigDialog(QDialog):
             )
         key = PARAM_KEY.get(action)
         edit = self._param_edit_for(action)
-        params = {key: edit.text()} if key and edit else {}
+        params = {key: edit.text().strip()} if key and edit else {}
         return Binding(
             control=self._control, type=ACTION_TYPE[action], action=action, params=params, label=label, icon=icon
         )

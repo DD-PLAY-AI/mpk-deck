@@ -32,3 +32,41 @@ def test_midi_callbacks_reach_gui_thread(monkeypatch) -> None:
     assert window._expanded_view._joystick._y == -1.0
     assert window._expanded_view._knobs["knob_1"]._value == 0.0
     window.close()
+
+
+def test_joystick_deadzone_snaps_small_values_to_zero() -> None:
+    QApplication.instance() or QApplication([])
+    import mpk_deck.ui.main_window as mw
+
+    import unittest.mock as m
+    with m.patch.object(mw.MPKController, "start", lambda self: False):
+        window = MainWindow()
+    window._apply_joystick_continuous("joystick_y", 0.03)  # inside the deadzone
+    assert window._joystick_values["joystick_y"] == 0.0
+    assert not window._joystick_timer.isActive()
+    window._apply_joystick_continuous("joystick_y", 0.5)
+    assert window._joystick_values["joystick_y"] == 0.5
+    window.close()
+
+
+def test_normal_binding_label_and_icon_round_trip_through_save(tmp_path, monkeypatch) -> None:
+    QApplication.instance() or QApplication([])
+    import mpk_deck.ui.main_window as mw
+    from mpk_deck.core.action_registry import Binding, load_config
+
+    cfg_path = tmp_path / "actions.yaml"
+    monkeypatch.setattr(mw, "DEFAULT_ACTIONS_PATH", str(cfg_path))
+    import unittest.mock as m
+    with m.patch.object(mw.MPKController, "start", lambda self: False):
+        window = MainWindow()
+
+    svg = '<circle cx="32" cy="32" r="14" fill="none" stroke="{accent}" stroke-width="5"/>'
+    window._save_normal_binding(
+        "pad_1", Binding("pad_1", "trigger", "open_url", {"url": "https://x"}, label="내 링크", icon=svg)
+    )
+
+    reloaded = load_config(cfg_path)
+    saved = next(b for b in reloaded.banks[reloaded.active_bank].bindings if b.control == "pad_1")
+    assert saved.label == "내 링크"
+    assert saved.icon == svg
+    window.close()

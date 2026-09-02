@@ -42,17 +42,23 @@ _TOOL = {
 
 # "<!" and "&" are rejected before parsing, so DOCTYPE/ENTITY declarations and
 # entity references never reach the XML parser - no XXE, no billion-laughs. "<?"
-# blocks processing instructions. A legit icon body needs none of these.
+# blocks processing instructions. The rest block external refs (SSRF) and the
+# renderer-side DoS surface (<filter>/<animate>/<pattern>/<mask>, nested <svg>,
+# url(...) paints). A legit icon body needs none of these.
 _FORBIDDEN = (
     "<script", "<image", "<foreignobject", "<use", "xlink", "href",
     "http://", "https://", "data:", "<style", "<!", "<?", "&",
+    "<filter", "<animate", "<set", "<pattern", "<mask", "<svg", "url(",
 )
 
 _MAX_LEN = 4000
 
 
-def _looks_safe(svg_body: str) -> bool:
-    if len(svg_body) > _MAX_LEN:
+def is_safe_svg_body(svg_body: str) -> bool:
+    """Cheap denylist + well-formedness check for an SVG icon body (no <svg>
+    wrapper). Run at generation time AND before rendering anything loaded from
+    actions.yaml."""
+    if not svg_body or len(svg_body) > _MAX_LEN:
         return False
     low = svg_body.lower()
     if any(tok in low for tok in _FORBIDDEN):
@@ -92,7 +98,7 @@ def generate_icon_svg(description: str, *, client: Optional["anthropic.Anthropic
     if tool_block is None:
         return None
     svg_body = (tool_block.input or {}).get("svg_body", "").strip()
-    if not svg_body or not _looks_safe(svg_body):
+    if not is_safe_svg_body(svg_body):
         logger.warning("generate_icon_svg: model returned unusable SVG")
         return None
     return svg_body

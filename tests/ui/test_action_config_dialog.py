@@ -82,6 +82,18 @@ def test_empty_label_field_yields_empty_label():
     assert dialog.result_binding().label == ""
 
 
+def test_switch_bank_disables_the_label_and_icon_fields():
+    dialog = ActionConfigDialog("pad_1")
+    dialog._select_action("open_url")
+    assert dialog._label_edit.isEnabled() is True
+    dialog._select_action("switch_bank")
+    assert dialog._label_edit.isEnabled() is False
+    assert dialog._icon_ai_toggle.isEnabled() is False
+    # and switch_bank never carries a label/icon out
+    assert dialog.result_binding().label == ""
+    assert dialog.result_binding().icon == ""
+
+
 def test_custom_icon_loads_clears_and_round_trips():
     svg = '<circle cx="32" cy="32" r="16" fill="none" stroke="{accent}" stroke-width="6"/>'
     dialog = ActionConfigDialog("pad_1", Binding("pad_1", "trigger", "open_url", {"url": "u"}, icon=svg))

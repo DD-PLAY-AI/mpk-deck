@@ -80,3 +80,13 @@ def test_empty_label_field_yields_empty_label():
     dialog = ActionConfigDialog("pad_1")
     dialog._select_action("open_url")
     assert dialog.result_binding().label == ""
+
+
+def test_custom_icon_loads_clears_and_round_trips():
+    svg = '<circle cx="32" cy="32" r="16" fill="none" stroke="{accent}" stroke-width="6"/>'
+    dialog = ActionConfigDialog("pad_1", Binding("pad_1", "trigger", "open_url", {"url": "u"}, icon=svg))
+    assert dialog._custom_icon == svg
+    assert dialog.result_binding().icon == svg
+    dialog._clear_custom_icon()
+    assert dialog._custom_icon == ""
+    assert dialog.result_binding().icon == ""

@@ -143,24 +143,29 @@ def app_icon_pixmap(path: str, size: int) -> QPixmap | None:
     return pm if not pm.isNull() else None
 
 
-def render_svg_icon(svg_body: str, size: int, accent_hex: str, neutral_hex: str = _NEUTRAL) -> QPixmap:
+def render_svg_icon(svg_body: str, size: int, accent_hex: str, neutral_hex: str = _NEUTRAL) -> QPixmap | None:
     """Render an {accent}/{neutral}-templated 64x64 SVG body to a `size`px pixmap.
-    Returns a blank (non-null) pixmap if the markup won't parse."""
+    Returns None if the markup won't parse."""
     markup = (
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">{svg_body}</svg>'
     ).replace("{accent}", accent_hex).replace("{neutral}", neutral_hex)
+    renderer = QSvgRenderer(markup.encode("utf-8"))
+    if not renderer.isValid():
+        return None
     pm = QPixmap(size, size)
     pm.fill(Qt.GlobalColor.transparent)
-    renderer = QSvgRenderer(markup.encode("utf-8"))
-    if renderer.isValid():
-        painter = QPainter(pm)
-        renderer.render(painter)
-        painter.end()
+    painter = QPainter(pm)
+    renderer.render(painter)
+    painter.end()
     return pm
 
 
 def action_pixmap(binding: Binding, size: int, accent_hex: str, *, for_knob: bool = False) -> QPixmap:
     """A `size`x`size` icon for this binding at the current accent."""
+    if binding.icon:
+        pm = render_svg_icon(binding.icon, size, accent_hex)
+        if pm is not None:
+            return pm
     if binding.action == "launch_program":
         path = binding.params.get("path", "")
         if path:
@@ -169,4 +174,4 @@ def action_pixmap(binding: Binding, size: int, accent_hex: str, *, for_knob: boo
                 return pm
     table = _ACTION_SVG_KNOB if for_knob else _ACTION_SVG
     body = table.get(binding.action) or _ACTION_SVG["launch_program"]
-    return render_svg_icon(body, size, accent_hex)
+    return render_svg_icon(body, size, accent_hex) or QPixmap(size, size)

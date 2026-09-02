@@ -24,8 +24,9 @@ from mpk_deck.config import ACCENT_HEX
 from mpk_deck.core.action_registry import Binding
 from mpk_deck.core.nl_action import parse_nl_action
 from mpk_deck.core.program_finder import list_installed_programs
+from mpk_deck.core.icon_gen import generate_icon_svg
 from mpk_deck.ui.accent import hex_to_rgb_str, mix
-from mpk_deck.ui.action_icons import ACTION_KO_LABEL, action_label, action_pixmap
+from mpk_deck.ui.action_icons import ACTION_KO_LABEL, action_label, action_pixmap, render_svg_icon
 from mpk_deck.ui.knob_geometry import needle_angle
 
 ACTION_CHOICES = [
@@ -296,6 +297,8 @@ class ActionConfigDialog(QDialog):
         return row
 
     def _build_name_field(self, existing: Binding | None) -> QVBoxLayout:
+        self._custom_icon = existing.icon if existing is not None else ""
+
         col = QVBoxLayout()
         col.setSpacing(6)
         label = QLabel("이름")
@@ -306,7 +309,82 @@ class ActionConfigDialog(QDialog):
             self._label_edit.setText(existing.label)
         col.addWidget(label)
         col.addWidget(self._label_edit)
+
+        icon_label = QLabel("아이콘")
+        icon_label.setObjectName("fieldLabel")
+        self._icon_preview = QLabel()
+        self._icon_preview.setFixedSize(30, 30)
+        self._icon_preview.setScaledContents(True)
+        default_btn = QPushButton("기본")
+        default_btn.setObjectName("ghost")
+        default_btn.clicked.connect(self._clear_custom_icon)
+        self._icon_ai_toggle = QToolButton()
+        self._icon_ai_toggle.setObjectName("nlToggle")
+        self._icon_ai_toggle.setText("✨ AI로 만들기")
+        self._icon_ai_toggle.setCheckable(True)
+        self._icon_ai_toggle.toggled.connect(lambda c: self._icon_ai_row.setVisible(c))
+        icon_row = QHBoxLayout()
+        icon_row.setSpacing(8)
+        icon_row.addWidget(self._icon_preview)
+        icon_row.addWidget(default_btn)
+        icon_row.addWidget(self._icon_ai_toggle)
+        icon_row.addStretch(1)
+
+        self._icon_ai_row = QWidget()
+        ai = QHBoxLayout(self._icon_ai_row)
+        ai.setContentsMargins(0, 0, 0, 0)
+        ai.setSpacing(6)
+        self._icon_desc_edit = QLineEdit()
+        self._icon_desc_edit.setPlaceholderText("무엇을 그릴까요 (예: 상승 차트)")
+        self._icon_gen_btn = QPushButton("생성")
+        self._icon_gen_btn.setObjectName("primary")
+        self._icon_gen_btn.clicked.connect(self._on_generate_icon)
+        ai.addWidget(self._icon_desc_edit, stretch=1)
+        ai.addWidget(self._icon_gen_btn)
+        self._icon_ai_row.setVisible(False)
+        self._icon_error = QLabel("")
+        self._icon_error.setObjectName("nlError")
+
+        col.addSpacing(4)
+        col.addWidget(icon_label)
+        col.addLayout(icon_row)
+        col.addWidget(self._icon_ai_row)
+        col.addWidget(self._icon_error)
+        self._refresh_icon_preview()
         return col
+
+    def _clear_custom_icon(self) -> None:
+        self._custom_icon = ""
+        self._icon_error.setText("")
+        self._refresh_icon_preview()
+        self._refresh_chip(self._current_action())
+
+    def _refresh_icon_preview(self) -> None:
+        if self._custom_icon:
+            pm = render_svg_icon(self._custom_icon, 30, self._accent_hex)
+        else:
+            pm = action_pixmap(
+                Binding(control=self._control, type="trigger", action=self._current_action(), params={}),
+                30, self._accent_hex,
+            )
+        if pm is not None:
+            self._icon_preview.setPixmap(pm)
+
+    def _on_generate_icon(self) -> None:
+        desc = self._icon_desc_edit.text().strip()
+        self._icon_error.setText("")
+        self._icon_gen_btn.setEnabled(False)
+        self._icon_gen_btn.repaint()
+        try:
+            svg = generate_icon_svg(desc)
+        finally:
+            self._icon_gen_btn.setEnabled(True)
+        if svg is None or render_svg_icon(svg, 30, self._accent_hex) is None:
+            self._icon_error.setText("아이콘을 만들지 못했어요 — 다르게 말해보거나 .env의 ANTHROPIC_API_KEY를 확인하세요")
+            return
+        self._custom_icon = svg
+        self._refresh_icon_preview()
+        self._refresh_chip(self._current_action())
 
     def _set_now_binding(self, existing: Binding | None) -> None:
         if existing is None:
@@ -562,12 +640,15 @@ class ActionConfigDialog(QDialog):
     def _on_action_selected(self, action: str) -> None:
         self._param_stack.setCurrentIndex(self._page_for_action.get(action, 0))
         self._refresh_chip(action)
+        self._refresh_icon_preview()
 
     def _refresh_chip(self, action: str) -> None:
         params = {}
         if action == "launch_program" and self._path_edit.text().strip():
             params = {"path": self._path_edit.text().strip()}
-        self._chip.set_action(Binding(control="", type="trigger", action=action, params=params))
+        self._chip.set_action(
+            Binding(control="", type="trigger", action=action, params=params, icon=self._custom_icon)
+        )
 
     def _current_action(self) -> str:
         for name, tile in self._tiles.items():
@@ -618,20 +699,25 @@ class ActionConfigDialog(QDialog):
     def result_binding(self) -> Binding:
         action = self._current_action()
         label = self._label_edit.text().strip()
+        icon = self._custom_icon
         if self._locked or action == "switch_bank":
             # The real bank_id is assigned by the caller (new bank, or the existing
             # locked control's target) - this dialog only ever supplies the name.
-            return Binding(control=self._control, type="trigger", action="switch_bank", params={}, label=label)
+            return Binding(
+                control=self._control, type="trigger", action="switch_bank", params={}, label=label, icon=icon
+            )
         if action in ("scroll_horizontal", "scroll_vertical"):
             sensitivity = max(SENSITIVITY_MIN, min(SENSITIVITY_MAX, self._sensitivity_slider.value() / 10))
             return Binding(
                 control=self._control, type="continuous", action=action,
-                params={"sensitivity": sensitivity}, label=label,
+                params={"sensitivity": sensitivity}, label=label, icon=icon,
             )
         key = PARAM_KEY.get(action)
         edit = self._param_edit_for(action)
         params = {key: edit.text()} if key and edit else {}
-        return Binding(control=self._control, type=ACTION_TYPE[action], action=action, params=params, label=label)
+        return Binding(
+            control=self._control, type=ACTION_TYPE[action], action=action, params=params, label=label, icon=icon
+        )
 
     def result_bank_name(self) -> str:
         return self._bank_name_edit.text().strip()

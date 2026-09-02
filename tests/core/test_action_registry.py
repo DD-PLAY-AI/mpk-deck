@@ -238,6 +238,24 @@ def test_binding_label_round_trips_and_empty_labels_are_omitted(tmp_path):
     assert by_control["pad_2"].label == ""
 
 
+def test_binding_icon_round_trips(tmp_path):
+    path = tmp_path / "actions.yaml"
+    svg = '<circle cx="32" cy="32" r="12" fill="none" stroke="{accent}" stroke-width="5"/>'
+    config = DeckConfig(
+        active_bank="bank_a",
+        switch_bindings={},
+        banks={"bank_a": Bank(name="Home", bindings=[
+            Binding(control="pad_1", type="trigger", action="open_url", params={"url": "u"}, icon=svg),
+            *default_joystick_bindings(),
+        ])},
+    )
+    save_config(path, config)
+    back = load_config(path)
+    by_control = {b.control: b for b in back.banks["bank_a"].bindings}
+    assert by_control["pad_1"].icon == svg
+    assert by_control["joystick_x"].icon == ""  # empty icon omitted + parses back to ""
+
+
 def test_save_config_failure_leaves_existing_file_intact(tmp_path, monkeypatch):
     import mpk_deck.core.action_registry as reg
 

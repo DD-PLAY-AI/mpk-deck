@@ -51,6 +51,15 @@ def test_action_label_known_actions():
         assert action_label(Binding("c", "trigger", action, {})) == expected
 
 
+def test_action_pixmap_uses_a_custom_icon_when_the_binding_has_one():
+    from mpk_deck.ui.action_icons import render_svg_icon
+
+    svg = '<rect x="12" y="12" width="40" height="40" rx="6" fill="none" stroke="{accent}" stroke-width="6"/>'
+    with_icon = action_pixmap(Binding("c", "trigger", "open_url", {}, icon=svg), 48, "#3a6df0")
+    assert not with_icon.isNull()
+    assert render_svg_icon("<not valid", 48, "#3a6df0") is None
+
+
 def test_action_pixmap_is_non_null_for_every_action():
     for action, _glyph, _label in [
         ("open_url", "", ""),

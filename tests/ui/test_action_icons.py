@@ -91,3 +91,21 @@ def test_app_icon_pixmap_is_cached(monkeypatch):
     action_icons.app_icon_pixmap(p, 32)
     action_icons.app_icon_pixmap(p, 32)
     assert len(calls) == 1  # second call served from cache
+
+
+def test_action_label_resolves_a_layout_name():
+    from mpk_deck.core.action_registry import Binding
+    from mpk_deck.core.layout_store import Layout
+    from mpk_deck.ui.action_icons import action_label
+
+    b = Binding("pad_1", "trigger", "apply_layout", {"layout_id": "coding"})
+    assert action_label(b, layouts={"coding": Layout(name="코딩 셋업", items=[])}) == "코딩 셋업"
+    assert action_label(b) == "레이아웃"
+
+
+def test_apply_layout_pixmap_is_non_null():
+    from mpk_deck.core.action_registry import Binding
+    from mpk_deck.ui.action_icons import action_pixmap
+
+    pm = action_pixmap(Binding("c", "trigger", "apply_layout", {}), 48, "#3a6df0")
+    assert not pm.isNull()

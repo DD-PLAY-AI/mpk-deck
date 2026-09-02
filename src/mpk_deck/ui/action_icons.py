@@ -26,6 +26,7 @@ ACTION_KO_LABEL = {
     "scroll_horizontal": "가로 스크롤",
     "scroll_vertical": "세로 스크롤",
     "switch_bank": "뱅크",
+    "apply_layout": "레이아웃",
 }
 
 _NEUTRAL = "#8a8f9c"
@@ -73,6 +74,12 @@ _ACTION_SVG = {
         '<rect x="12" y="12" width="40" height="40" rx="10" fill="none" stroke="{neutral}" stroke-width="5"/>'
         '<path d="M27 24 L42 32 L27 40 Z" fill="{accent}" stroke="{accent}" stroke-width="4" stroke-linejoin="round"/>'
     ),
+    "apply_layout": (  # a 2x2 grid of panes = a scene
+        '<rect x="12" y="12" width="18" height="18" rx="3" fill="none" stroke="{neutral}" stroke-width="4.5"/>'
+        '<rect x="34" y="12" width="18" height="18" rx="3" fill="none" stroke="{neutral}" stroke-width="4.5"/>'
+        '<rect x="12" y="34" width="18" height="18" rx="3" fill="none" stroke="{neutral}" stroke-width="4.5"/>'
+        '<rect x="34" y="34" width="18" height="18" rx="3" fill="{accent}" stroke="{accent}" stroke-width="4.5"/>'
+    ),
 }
 
 # knob variant: accent mark only - the neutral frame is noise at ~18px and fights the needle
@@ -107,6 +114,12 @@ _ACTION_SVG_KNOB = {
     "launch_program": (
         '<path d="M24 18 L48 32 L24 46 Z" fill="{accent}" stroke="{accent}" stroke-width="5" stroke-linejoin="round"/>'
     ),
+    "apply_layout": (
+        '<rect x="14" y="14" width="16" height="16" rx="3" fill="none" stroke="{accent}" stroke-width="5"/>'
+        '<rect x="34" y="14" width="16" height="16" rx="3" fill="none" stroke="{accent}" stroke-width="5"/>'
+        '<rect x="14" y="34" width="16" height="16" rx="3" fill="none" stroke="{accent}" stroke-width="5"/>'
+        '<rect x="34" y="34" width="16" height="16" rx="3" fill="{accent}" stroke="{accent}" stroke-width="5"/>'
+    ),
 }
 
 _app_icon_cache: dict[tuple[str, int], QPixmap] = {}
@@ -118,7 +131,7 @@ def program_name_from_path(path: str) -> str:
     return stem[:1].upper() + stem[1:] if stem else path
 
 
-def action_label(binding: Binding, bank_names: dict[str, str] | None = None) -> str:
+def action_label(binding: Binding, bank_names: dict[str, str] | None = None, layouts=None) -> str:
     if binding.label:
         return binding.label
     if binding.action == "launch_program":
@@ -127,6 +140,9 @@ def action_label(binding: Binding, bank_names: dict[str, str] | None = None) -> 
     if binding.action == "switch_bank":
         bank_id = binding.params.get("bank_id", "")
         return (bank_names or {}).get(bank_id) or ACTION_KO_LABEL["switch_bank"]
+    if binding.action == "apply_layout":
+        layout = (layouts or {}).get(binding.params.get("layout_id", ""))
+        return layout.name if layout is not None else ACTION_KO_LABEL["apply_layout"]
     return ACTION_KO_LABEL.get(binding.action, binding.action)
 
 

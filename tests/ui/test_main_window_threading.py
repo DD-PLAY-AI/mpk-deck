@@ -70,3 +70,22 @@ def test_normal_binding_label_and_icon_round_trip_through_save(tmp_path, monkeyp
     assert saved.label == "내 링크"
     assert saved.icon == svg
     window.close()
+
+
+def test_apply_layout_pad_shows_the_layout_name(monkeypatch) -> None:
+    QApplication.instance() or QApplication([])
+    import mpk_deck.ui.main_window as mw
+    from mpk_deck.core.action_registry import Binding
+    from mpk_deck.core.layout_store import Layout
+
+    monkeypatch.setattr(mw, "load_layouts", lambda: {"coding": Layout(name="코딩 셋업", items=[])})
+    import unittest.mock as m
+    with m.patch.object(mw.MPKController, "start", lambda self: False):
+        window = MainWindow()
+    assert window._layouts == {"coding": Layout(name="코딩 셋업", items=[])}
+    window._mini_view.update_bindings(
+        {"pad_1": Binding("pad_1", "trigger", "apply_layout", {"layout_id": "coding"})},
+        {}, window._layouts,
+    )
+    assert window._mini_view._pads["pad_1"]._binding_label == "코딩 셋업"
+    window.close()

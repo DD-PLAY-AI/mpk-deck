@@ -37,6 +37,7 @@ from mpk_deck.core.handlers import (
     scroll_vertical,
     set_system_volume,
 )
+from mpk_deck.core.layout_store import load_layouts
 from mpk_deck.midi.mpk_controller import MPKController
 from mpk_deck.ui.accent import ACCENT_CHOICES
 from mpk_deck.ui.action_config_dialog import ActionConfigDialog
@@ -113,6 +114,7 @@ class MainWindow(QMainWindow):
 
         self._config = load_config(DEFAULT_ACTIONS_PATH)
         self._bank_names: dict[str, str] = {bank_id: bank.name for bank_id, bank in self._config.banks.items()}
+        self._layouts = load_layouts()
         self._joystick_values: dict[str, float] = {"joystick_x": 0.0, "joystick_y": 0.0}
         self._engine = build_action_engine(
             self._config, self._on_bank_changed, self._on_joystick_continuous, self._on_trigger
@@ -147,12 +149,12 @@ class MainWindow(QMainWindow):
         self._mini_view = MiniView()
         self._mini_view.pad_activated.connect(self._on_control_activated)
         self._mini_view.pad_configure_requested.connect(self._on_control_configure_requested)
-        self._mini_view.update_bindings(self._bindings, self._bank_names)
+        self._mini_view.update_bindings(self._bindings, self._bank_names, self._layouts)
         self._expanded_view = ExpandedView()
         self._expanded_view.control_activated.connect(self._on_control_activated)
         self._expanded_view.control_configure_requested.connect(self._on_control_configure_requested)
         self._expanded_view.decorative_button_activated.connect(self._on_decorative_button)
-        self._expanded_view.update_bindings(self._bindings, self._bank_names)
+        self._expanded_view.update_bindings(self._bindings, self._bank_names, self._layouts)
 
         container = QWidget(self)
         layout = QVBoxLayout(container)
@@ -358,8 +360,8 @@ class MainWindow(QMainWindow):
 
     def _apply_bank_change(self, bank_id: str) -> None:
         self._bindings = dict(self._engine.bindings)
-        self._mini_view.update_bindings(self._bindings, self._bank_names)
-        self._expanded_view.update_bindings(self._bindings, self._bank_names)
+        self._mini_view.update_bindings(self._bindings, self._bank_names, self._layouts)
+        self._expanded_view.update_bindings(self._bindings, self._bank_names, self._layouts)
         self._bank_indicator.set_bank_name(self._bank_names.get(bank_id, bank_id))
         self._position_overlay_widgets()
         self._config.active_bank = bank_id
@@ -439,8 +441,14 @@ class MainWindow(QMainWindow):
         )
         self._bindings = dict(self._engine.bindings)
         save_config(DEFAULT_ACTIONS_PATH, self._config)
-        self._mini_view.update_bindings(self._bindings, self._bank_names)
-        self._expanded_view.update_bindings(self._bindings, self._bank_names)
+        self._reload_layouts()  # also re-runs update_bindings on both views
+
+    def _reload_layouts(self) -> None:
+        """Re-read layouts.yaml (a layout may have just been saved from the config
+        dialog) and repaint the deck so a fresh layout's name shows on its pad."""
+        self._layouts = load_layouts()
+        self._mini_view.update_bindings(self._bindings, self._bank_names, self._layouts)
+        self._expanded_view.update_bindings(self._bindings, self._bank_names, self._layouts)
 
     def resizeEvent(self, event) -> None:  # noqa: N802 (Qt override)
         super().resizeEvent(event)

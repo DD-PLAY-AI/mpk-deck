@@ -169,6 +169,7 @@ class MiniView(WindowGripMixin, QWidget):
         self._accent_hex = ACCENT_HEX
         self._bindings: dict[str, Binding] = {}
         self._bank_names: dict[str, str] = {}
+        self._layouts: dict = {}
         self._pads: dict[str, PadButton] = {}
         for control in PAD_ORDER:
             button = PadButton(self._labels.get(control, control.upper()), self)
@@ -187,7 +188,7 @@ class MiniView(WindowGripMixin, QWidget):
         for pad in self._pads.values():
             pad.set_accent(accent_hex)
         self._apply_style()
-        self.update_bindings(self._bindings, self._bank_names)  # icons bake the accent - repaint them
+        self.update_bindings(self._bindings, self._bank_names, self._layouts)  # icons bake the accent - repaint
 
     def flash_control(self, control: str) -> None:
         pad = self._pads.get(control)
@@ -199,10 +200,16 @@ class MiniView(WindowGripMixin, QWidget):
         qss = _dark_qss(self._accent_hex, accent_rgb) if self._dark else _light_qss(self._accent_hex, accent_rgb)
         self.setStyleSheet(qss)
 
-    def update_bindings(self, bindings: dict[str, Binding], bank_names: dict[str, str] | None = None) -> None:
+    def update_bindings(
+        self,
+        bindings: dict[str, Binding],
+        bank_names: dict[str, str] | None = None,
+        layouts: dict | None = None,
+    ) -> None:
         """Reflect each pad's bound action as an icon over a readable label."""
         self._bindings = dict(bindings)
         self._bank_names = dict(bank_names or {})
+        self._layouts = dict(layouts or {})
         for control, button in self._pads.items():
             binding = bindings.get(control)
             if binding is None:
@@ -210,7 +217,7 @@ class MiniView(WindowGripMixin, QWidget):
                 button.setText(self._labels.get(control, control.upper()))
                 button.setToolTip("")
             else:
-                label = self._labels.get(control) or action_label(binding, self._bank_names)
+                label = self._labels.get(control) or action_label(binding, self._bank_names, self._layouts)
                 button.set_binding(action_pixmap(binding, 64, self._accent_hex), label)
                 button.setToolTip(label)
 

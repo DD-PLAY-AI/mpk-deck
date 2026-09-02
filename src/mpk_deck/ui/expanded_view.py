@@ -375,6 +375,7 @@ class ExpandedView(WindowGripMixin, QWidget):
         self._labels: dict[str, str] = {}
         self._bindings: dict[str, Binding] = {}
         self._bank_names: dict[str, str] = {}
+        self._layouts: dict = {}
 
         self._joystick = JoystickWidget(self)
         self._joystick.axis_configure_requested.connect(self.control_configure_requested.emit)
@@ -440,13 +441,19 @@ class ExpandedView(WindowGripMixin, QWidget):
         for key in self._keys.values():
             key.set_accent(accent_hex)
         self.set_dark(self._dark)  # re-derives panel/bank-group border color, and re-layouts
-        self.update_bindings(self._bindings, self._bank_names)  # action icons bake the accent
+        self.update_bindings(self._bindings, self._bank_names, self._layouts)  # action icons bake the accent
 
-    def update_bindings(self, bindings: dict[str, Binding], bank_names: dict[str, str] | None = None) -> None:
+    def update_bindings(
+        self,
+        bindings: dict[str, Binding],
+        bank_names: dict[str, str] | None = None,
+        layouts: dict | None = None,
+    ) -> None:
         """Show each pad/knob/key's bound action - icon+label on pads, a small
         glyph + tooltip on knobs, an accent dot + tooltip on keys."""
         self._bindings = dict(bindings)
         self._bank_names = dict(bank_names or {})
+        self._layouts = dict(layouts or {})
         for control, pad in self._pads.items():
             binding = bindings.get(control)
             if binding is None:
@@ -454,7 +461,7 @@ class ExpandedView(WindowGripMixin, QWidget):
                 pad.setText(self._labels.get(control, control.upper()))
                 pad.setToolTip("")
             else:
-                label = self._labels.get(control) or action_label(binding, self._bank_names)
+                label = self._labels.get(control) or action_label(binding, self._bank_names, self._layouts)
                 pad.set_binding(action_pixmap(binding, 64, self._accent_hex), label)
                 pad.setToolTip(label)
         for control, knob in self._knobs.items():
@@ -464,11 +471,14 @@ class ExpandedView(WindowGripMixin, QWidget):
             else:
                 knob.set_binding(
                     action_pixmap(binding, 40, self._accent_hex, for_knob=True),
-                    action_label(binding, self._bank_names),
+                    action_label(binding, self._bank_names, self._layouts),
                 )
         for i, key in self._keys.items():
             binding = bindings.get(f"key_{i}")
-            key.set_bound(binding is not None, action_label(binding, self._bank_names) if binding else "")
+            key.set_bound(
+                binding is not None,
+                action_label(binding, self._bank_names, self._layouts) if binding else "",
+            )
 
     def set_knob_style(self, style: str) -> None:
         self._knob_style = style

@@ -122,3 +122,23 @@ def test_call_uses_haiku_model_and_forces_the_tool():
         "name": "propose_binding",
         "disable_parallel_tool_use": True,
     }
+
+
+def test_apply_layout_resolves_a_layout_name(monkeypatch):
+    import mpk_deck.core.nl_action as nl
+    from mpk_deck.core.layout_store import Layout
+
+    monkeypatch.setattr(nl, "load_layouts", lambda: {"coding": Layout(name="코딩 셋업", items=[])})
+    client = FakeClient(_tool_use_response({"action": "apply_layout", "layout_name": "코딩 셋업"}))
+    binding = parse_nl_action("코딩 레이아웃 열어", [], client=client)
+    assert binding is not None
+    assert binding.action == "apply_layout"
+    assert binding.params == {"layout_id": "coding"}
+
+
+def test_apply_layout_unknown_name_returns_none(monkeypatch):
+    import mpk_deck.core.nl_action as nl
+
+    monkeypatch.setattr(nl, "load_layouts", lambda: {})
+    client = FakeClient(_tool_use_response({"action": "apply_layout", "layout_name": "nope"}))
+    assert parse_nl_action("x", [], client=client) is None

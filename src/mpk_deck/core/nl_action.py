@@ -5,6 +5,7 @@ from typing import Optional
 import anthropic
 
 from mpk_deck.core.action_registry import Binding
+from mpk_deck.core.layout_store import load_layouts
 from mpk_deck.core.program_finder import InstalledProgram
 
 logger = logging.getLogger(__name__)
@@ -16,6 +17,7 @@ ACTION_TYPE = {
     "open_url": "trigger",
     "focus_window": "trigger",
     "set_system_volume": "continuous",
+    "apply_layout": "trigger",
 }
 
 _TOOL = {
@@ -38,6 +40,7 @@ _TOOL = {
             },
             "url": {"type": "string", "description": "Required for open_url."},
             "title_contains": {"type": "string", "description": "Required for focus_window."},
+            "layout_name": {"type": "string", "description": "Required for apply_layout; the name of a saved layout."},
         },
         "required": ["action"],
     },
@@ -105,6 +108,15 @@ def _to_binding(data: dict, installed_programs: list[InstalledProgram]) -> Bindi
         if not title:
             return None
         params = {"title_contains": title}
+    elif action == "apply_layout":
+        name = (data.get("layout_name") or "").strip()
+        layouts = load_layouts()
+        match = next((lid for lid, lo in layouts.items() if lo.name == name), None)
+        if match is None:
+            match = next((lid for lid, lo in layouts.items() if lo.name.lower() == name.lower()), None)
+        if match is None:
+            return None
+        params = {"layout_id": match}
     else:  # set_system_volume
         params = {}
 

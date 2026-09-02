@@ -3,7 +3,9 @@ from PySide6.QtGui import QColor, QFont, QPainter, QPen, QRadialGradient
 from PySide6.QtWidgets import QApplication, QFrame, QGraphicsDropShadowEffect, QMenu, QPushButton, QWidget
 
 from mpk_deck.config import ACCENT_HEX, ACCENT_RGB
+from mpk_deck.core.action_registry import Binding
 from mpk_deck.ui.accent import hex_to_rgb_str, mix
+from mpk_deck.ui.action_icons import action_label, action_pixmap
 from mpk_deck.ui.joystick_geometry import clamp_deflection
 from mpk_deck.ui.keybed import NUM_KEYS, compute_keybed_rects, is_black_key
 from mpk_deck.ui.knob_geometry import needle_angle
@@ -94,6 +96,7 @@ class _DebouncedKey(QFrame):
         super().__init__(parent)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self._accent_hex = ACCENT_HEX
+        self._bound = False
         self._click_timer = QTimer(self)
         self._click_timer.setSingleShot(True)
         self._click_timer.timeout.connect(self.activated.emit)
@@ -108,6 +111,23 @@ class _DebouncedKey(QFrame):
 
     def set_accent(self, accent_hex: str) -> None:
         self._accent_hex = accent_hex
+        self.update()
+
+    def set_bound(self, bound: bool, tooltip: str) -> None:
+        """A bound key gets a small accent dot near its bottom edge + a tooltip."""
+        self._bound = bound
+        self.setToolTip(tooltip)
+        self.update()
+
+    def paintEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        super().paintEvent(event)
+        if not self._bound:
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(self._accent_hex))
+        painter.drawEllipse(QPointF(self.width() / 2, self.height() - 9), 2.5, 2.5)
 
     def mousePressEvent(self, event) -> None:  # noqa: N802 (Qt override)
         if event.button() == Qt.MouseButton.LeftButton:
@@ -251,6 +271,7 @@ class KnobWidget(QFrame):
         self._style = "B"
         self._colors = _DARK
         self._accent_hex = ACCENT_HEX
+        self._binding_pixmap = None
 
     def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802 (Qt override)
         self.configure_requested.emit()
@@ -258,6 +279,12 @@ class KnobWidget(QFrame):
 
     def set_value(self, value: float) -> None:
         self._value = max(0.0, min(1.0, value))
+        self.update()
+
+    def set_binding(self, pixmap, tooltip: str) -> None:
+        """A small action glyph behind the needle + a tooltip. `pixmap` None clears it."""
+        self._binding_pixmap = pixmap
+        self.setToolTip(tooltip)
         self.update()
 
     def apply_style(
@@ -290,9 +317,17 @@ class KnobWidget(QFrame):
         r = d / 2
         accent = QColor(self._accent_hex)
 
+        if self._binding_pixmap is not None:
+            side = round(d * 0.42)
+            scaled = self._binding_pixmap.scaled(
+                side, side, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
+            )
+            painter.drawPixmap(round(r - scaled.width() / 2), round(r - scaled.height() / 2), scaled)
+
         if self._style == "A":
-            painter.setPen(QColor(self._colors["text"]))
-            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self._label)
+            if self._binding_pixmap is None:
+                painter.setPen(QColor(self._colors["text"]))
+                painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self._label)
             painter.save()
             painter.translate(QPointF(r, r))
             painter.rotate(needle_angle(self._value))
@@ -337,6 +372,9 @@ class ExpandedView(WindowGripMixin, QWidget):
         self._dark = dark
         self._accent_hex = ACCENT_HEX
         self._knob_style = "B"
+        self._labels: dict[str, str] = {}
+        self._bindings: dict[str, Binding] = {}
+        self._bank_names: dict[str, str] = {}
 
         self._joystick = JoystickWidget(self)
         self._joystick.axis_configure_requested.connect(self.control_configure_requested.emit)
@@ -402,6 +440,32 @@ class ExpandedView(WindowGripMixin, QWidget):
         for key in self._keys.values():
             key.set_accent(accent_hex)
         self.set_dark(self._dark)  # re-derives panel/bank-group border color, and re-layouts
+        self.update_bindings(self._bindings, self._bank_names)  # action icons bake the accent
+
+    def update_bindings(self, bindings: dict[str, Binding], bank_names: dict[str, str] | None = None) -> None:
+        """Show each pad/knob/key's bound action - icon+label on pads, a small
+        glyph + tooltip on knobs, an accent dot + tooltip on keys."""
+        self._bindings = dict(bindings)
+        self._bank_names = dict(bank_names or {})
+        for control, pad in self._pads.items():
+            binding = bindings.get(control)
+            if binding is None:
+                pad.set_binding(None, "")
+                pad.setText(self._labels.get(control, control.upper()))
+                pad.setToolTip("")
+            else:
+                label = self._labels.get(control) or action_label(binding, self._bank_names)
+                pad.set_binding(action_pixmap(binding, 64, self._accent_hex), label)
+                pad.setToolTip(label)
+        for control, knob in self._knobs.items():
+            binding = bindings.get(control)
+            if binding is None:
+                knob.set_binding(None, "")
+            else:
+                knob.set_binding(action_pixmap(binding, 40, self._accent_hex), action_label(binding, self._bank_names))
+        for i, key in self._keys.items():
+            binding = bindings.get(f"key_{i}")
+            key.set_bound(binding is not None, action_label(binding, self._bank_names) if binding else "")
 
     def set_knob_style(self, style: str) -> None:
         self._knob_style = style

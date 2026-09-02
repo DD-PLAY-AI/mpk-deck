@@ -136,11 +136,12 @@ class MainWindow(QMainWindow):
         self._mini_view = MiniView()
         self._mini_view.pad_activated.connect(self._on_control_activated)
         self._mini_view.pad_configure_requested.connect(self._on_control_configure_requested)
-        self._mini_view.update_bindings(self._bindings)
+        self._mini_view.update_bindings(self._bindings, self._bank_names)
         self._expanded_view = ExpandedView()
         self._expanded_view.control_activated.connect(self._on_control_activated)
         self._expanded_view.control_configure_requested.connect(self._on_control_configure_requested)
         self._expanded_view.decorative_button_activated.connect(self._on_decorative_button)
+        self._expanded_view.update_bindings(self._bindings, self._bank_names)
 
         container = QWidget(self)
         layout = QVBoxLayout(container)
@@ -346,7 +347,8 @@ class MainWindow(QMainWindow):
 
     def _apply_bank_change(self, bank_id: str) -> None:
         self._bindings = dict(self._engine.bindings)
-        self._mini_view.update_bindings(self._bindings)
+        self._mini_view.update_bindings(self._bindings, self._bank_names)
+        self._expanded_view.update_bindings(self._bindings, self._bank_names)
         self._bank_indicator.set_bank_name(self._bank_names.get(bank_id, bank_id))
         self._position_overlay_widgets()
         self._config.active_bank = bank_id
@@ -424,7 +426,8 @@ class MainWindow(QMainWindow):
         )
         self._bindings = dict(self._engine.bindings)
         save_config(DEFAULT_ACTIONS_PATH, self._config)
-        self._mini_view.update_bindings(self._bindings)
+        self._mini_view.update_bindings(self._bindings, self._bank_names)
+        self._expanded_view.update_bindings(self._bindings, self._bank_names)
 
     def resizeEvent(self, event) -> None:  # noqa: N802 (Qt override)
         super().resizeEvent(event)

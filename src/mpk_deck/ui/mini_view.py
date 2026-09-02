@@ -1,11 +1,11 @@
-from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QColor
+from PySide6.QtCore import QRectF, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QFontMetrics, QPainter
 from PySide6.QtWidgets import QApplication, QGraphicsDropShadowEffect, QPushButton, QWidget
 
 from mpk_deck.config import ACCENT_HEX
 from mpk_deck.core.action_registry import Binding
 from mpk_deck.ui.accent import hex_to_rgb_str
-from mpk_deck.ui.action_config_dialog import ACTION_GLYPHS, ACTION_LABELS
+from mpk_deck.ui.action_icons import action_label, action_pixmap
 from mpk_deck.ui.grid_layout import compute_pad_rects
 from mpk_deck.ui.window_grip import WindowGripMixin
 
@@ -75,6 +75,8 @@ class PadButton(QPushButton):
     def __init__(self, text: str, parent=None) -> None:
         super().__init__(text, parent)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._binding_pixmap = None
+        self._binding_label = ""
         self._click_timer = QTimer(self)
         self._click_timer.setSingleShot(True)
         self._click_timer.timeout.connect(self.activated.emit)
@@ -118,6 +120,41 @@ class PadButton(QPushButton):
         self._glow.setEnabled(True)
         self._flash_timer.start(180)
 
+    def set_binding(self, pixmap, label: str) -> None:
+        """Show the bound action as an icon over a label. `pixmap` None + empty
+        label reverts to the plain text set via setText()."""
+        self._binding_pixmap = pixmap
+        self._binding_label = label
+        if pixmap is not None or label:
+            self.setText("")
+        self.update()
+
+    def paintEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        super().paintEvent(event)
+        if self._binding_pixmap is None and not self._binding_label:
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        w, h = self.width(), self.height()
+        has_label = bool(self._binding_label)
+        icon_box = h * (0.52 if has_label else 0.7)
+        if self._binding_pixmap is not None:
+            side = min(icon_box, w * 0.7)
+            scaled = self._binding_pixmap.scaled(
+                round(side), round(side), Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            top = (h * 0.62 - scaled.height()) / 2 if has_label else (h - scaled.height()) / 2
+            painter.drawPixmap(round((w - scaled.width()) / 2), round(max(2, top)), scaled)
+        if has_label:
+            painter.setPen(self.palette().buttonText().color())
+            font = painter.font()
+            font.setPixelSize(max(8, round(h * 0.16)))
+            painter.setFont(font)
+            fm = QFontMetrics(font)
+            text = fm.elidedText(self._binding_label, Qt.TextElideMode.ElideRight, round(w - 6))
+            painter.drawText(QRectF(3, h * 0.6, w - 6, h * 0.36), Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter, text)
+
 
 class MiniView(WindowGripMixin, QWidget):
     pad_activated = Signal(str)
@@ -130,6 +167,8 @@ class MiniView(WindowGripMixin, QWidget):
         self._labels = labels or {}
         self._dark = dark
         self._accent_hex = ACCENT_HEX
+        self._bindings: dict[str, Binding] = {}
+        self._bank_names: dict[str, str] = {}
         self._pads: dict[str, PadButton] = {}
         for control in PAD_ORDER:
             button = PadButton(self._labels.get(control, control.upper()), self)
@@ -148,6 +187,7 @@ class MiniView(WindowGripMixin, QWidget):
         for pad in self._pads.values():
             pad.set_accent(accent_hex)
         self._apply_style()
+        self.update_bindings(self._bindings, self._bank_names)  # icons bake the accent - repaint them
 
     def flash_control(self, control: str) -> None:
         pad = self._pads.get(control)
@@ -159,18 +199,20 @@ class MiniView(WindowGripMixin, QWidget):
         qss = _dark_qss(self._accent_hex, accent_rgb) if self._dark else _light_qss(self._accent_hex, accent_rgb)
         self.setStyleSheet(qss)
 
-    def update_bindings(self, bindings: dict[str, Binding]) -> None:
-        """Reflect each pad's bound action as a big icon instead of the bare control id."""
+    def update_bindings(self, bindings: dict[str, Binding], bank_names: dict[str, str] | None = None) -> None:
+        """Reflect each pad's bound action as an icon over a readable label."""
+        self._bindings = dict(bindings)
+        self._bank_names = dict(bank_names or {})
         for control, button in self._pads.items():
             binding = bindings.get(control)
             if binding is None:
+                button.set_binding(None, "")
                 button.setText(self._labels.get(control, control.upper()))
                 button.setToolTip("")
             else:
-                glyph = ACTION_GLYPHS.get(binding.action, "")
-                custom_label = self._labels.get(control)
-                button.setText(f"{glyph}\n{custom_label}" if custom_label else glyph or control.upper())
-                button.setToolTip(ACTION_LABELS.get(binding.action, binding.action))
+                label = self._labels.get(control) or action_label(binding, self._bank_names)
+                button.set_binding(action_pixmap(binding, 64, self._accent_hex), label)
+                button.setToolTip(label)
 
     def resizeEvent(self, event) -> None:  # noqa: N802 (Qt override)
         super().resizeEvent(event)

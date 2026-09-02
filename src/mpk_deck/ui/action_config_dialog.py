@@ -1,5 +1,5 @@
-from PySide6.QtCore import QPointF, Qt
-from PySide6.QtGui import QColor, QPainter, QPen
+from PySide6.QtCore import QPointF, QSize, Qt
+from PySide6.QtGui import QColor, QIcon, QPainter, QPen
 from PySide6.QtWidgets import (
     QButtonGroup,
     QDialog,
@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QSizePolicy,
     QSlider,
     QStackedWidget,
     QToolButton,
@@ -24,6 +25,7 @@ from mpk_deck.core.action_registry import Binding
 from mpk_deck.core.nl_action import parse_nl_action
 from mpk_deck.core.program_finder import list_installed_programs
 from mpk_deck.ui.accent import hex_to_rgb_str, mix
+from mpk_deck.ui.action_icons import ACTION_KO_LABEL, action_label, action_pixmap
 from mpk_deck.ui.knob_geometry import needle_angle
 
 ACTION_CHOICES = [
@@ -117,17 +119,16 @@ QFrame#paramFrame {{
     border-radius: 12px;
 }}
 
-QPushButton#tile {{
+QToolButton#tile {{
     background: {tile_bg};
     border: 1px solid {tile_line};
     border-radius: 11px;
     color: {ink};
     font-size: 10px;
-    padding: 8px 2px;
-    text-align: center;
+    padding: 6px 2px;
 }}
-QPushButton#tile:hover {{ background: rgba({accent_rgb}, 26); }}
-QPushButton#tile:checked {{ border: 1px solid {accent_hex}; background: rgba({accent_rgb}, 36); }}
+QToolButton#tile:hover {{ background: rgba({accent_rgb}, 26); }}
+QToolButton#tile:checked {{ border: 1px solid {accent_hex}; background: rgba({accent_rgb}, 36); }}
 
 QToolButton#nlToggle {{
     border: none; background: transparent; color: {accent_hex};
@@ -164,11 +165,13 @@ class _ControlChip(QWidget):
         super().__init__(parent)
         self._kind = _kind_of(control)
         self._accent = accent_hex
-        self._glyph = ""
+        self._action_pixmap = None
         self.setFixedSize(58, 58)
 
-    def set_glyph(self, glyph: str) -> None:
-        self._glyph = glyph
+    def set_action(self, action: str) -> None:
+        self._action_pixmap = action_pixmap(
+            Binding(control="", type="trigger", action=action, params={}), 26, self._accent
+        )
         self.update()
 
     def paintEvent(self, event) -> None:  # noqa: N802 (Qt override)
@@ -201,12 +204,11 @@ class _ControlChip(QWidget):
         else:  # pad
             painter.drawRoundedRect(rect, 12, 12)
 
-        if self._glyph:
-            painter.setPen(QColor(self._accent))
-            font = painter.font()
-            font.setPixelSize(20)
-            painter.setFont(font)
-            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self._glyph)
+        if self._action_pixmap is not None:
+            pm = self._action_pixmap
+            painter.drawPixmap(
+                round((self.width() - pm.width()) / 2), round((self.height() - pm.height()) / 2), pm
+            )
 
 
 class ActionConfigDialog(QDialog):
@@ -299,12 +301,10 @@ class ActionConfigDialog(QDialog):
             self._now_label.setText("비어 있음")
             self._now_label.setProperty("empty", "true")
             return
-        glyph = ACTION_GLYPHS.get(existing.action, "")
-        label = ACTION_LABELS.get(existing.action, existing.action)
+        text = action_label(existing, self._bank_names)
         key = PARAM_KEY.get(existing.action)
         detail = str(existing.params.get(key, "")) if key else ""
-        text = f"{glyph} {label}".strip()
-        if detail:
+        if detail and detail != text:
             text += f" · {detail}"
         self._now_label.setText(text)
         self._now_label.setProperty("empty", "false")
@@ -322,12 +322,17 @@ class ActionConfigDialog(QDialog):
         grid.setSpacing(8)
         self._action_group = QButtonGroup(self)
         self._action_group.setExclusive(True)
-        self._tiles: dict[str, QPushButton] = {}
-        for i, (name, glyph, label) in enumerate(ACTION_CHOICES):
-            tile = QPushButton(f"{glyph}\n{label}")
+        self._tiles: dict[str, QToolButton] = {}
+        for i, (name, _glyph, _label) in enumerate(ACTION_CHOICES):
+            tile = QToolButton()
             tile.setObjectName("tile")
+            tile.setText(ACTION_KO_LABEL.get(name, name))
+            tile.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
             tile.setCheckable(True)
-            tile.setMinimumHeight(46)
+            tile.setMinimumHeight(54)
+            tile.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            tile.setIcon(QIcon(action_pixmap(Binding("", "trigger", name, {}), 22, self._accent_hex)))
+            tile.setIconSize(QSize(22, 22))
             tile.clicked.connect(lambda _checked, n=name: self._on_action_selected(n))
             self._action_group.addButton(tile)
             self._tiles[name] = tile
@@ -543,7 +548,7 @@ class ActionConfigDialog(QDialog):
 
     def _on_action_selected(self, action: str) -> None:
         self._param_stack.setCurrentIndex(self._page_for_action.get(action, 0))
-        self._chip.set_glyph(ACTION_GLYPHS.get(action, ""))
+        self._chip.set_action(action)
 
     def _current_action(self) -> str:
         for name, tile in self._tiles.items():

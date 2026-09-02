@@ -2,36 +2,67 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+import pytest
 from PySide6.QtWidgets import QApplication
 
-from mpk_deck.ui.action_config_dialog import ACTION_CHOICES, ActionConfigDialog
+from mpk_deck.core.action_registry import Binding
+from mpk_deck.ui.action_config_dialog import ACTION_CHOICES, ActionConfigDialog, control_display_id
 
 
+@pytest.fixture(autouse=True)
 def _app():
     return QApplication.instance() or QApplication([])
 
 
+def test_control_display_id():
+    assert control_display_id("pad_3") == "PAD 3"
+    assert control_display_id("knob_2") == "KNOB 2"
+    assert control_display_id("joystick_x") == "JOYSTICK X"
+
+
 def test_every_action_maps_to_an_existing_stack_page():
-    _app()
     dialog = ActionConfigDialog("pad_1")
-    page_count = dialog._param_stack.count()
     for action, _glyph, _label in ACTION_CHOICES:
-        assert 0 <= dialog._page_for_action[action] < page_count
+        assert 0 <= dialog._page_for_action[action] < dialog._param_stack.count()
 
 
-def test_selecting_scroll_horizontal_shows_the_sensitivity_page_not_bank_name():
+def test_selecting_scroll_shows_the_sensitivity_page_not_bank_name():
     # Regression: the old code set the stack index to the action-list row, so
-    # scroll_horizontal (row 4) landed on the bank-name page (page 4).
-    _app()
+    # "Scroll Horizontal" landed on the bank-name page.
     dialog = ActionConfigDialog("knob_2")
     dialog._select_action("scroll_horizontal")
-    assert dialog._param_stack.currentWidget() is dialog._sensitivity_edit.parent()
+    scroll_page = dialog._param_stack.currentIndex()
     dialog._select_action("scroll_vertical")
-    assert dialog._param_stack.currentWidget() is dialog._sensitivity_edit.parent()
-
-
-def test_selecting_switch_bank_shows_the_bank_name_page():
-    _app()
-    dialog = ActionConfigDialog("pad_3")
+    assert dialog._param_stack.currentIndex() == scroll_page
     dialog._select_action("switch_bank")
-    assert dialog._param_stack.currentWidget() is dialog._bank_name_edit.parent()
+    assert dialog._param_stack.currentIndex() != scroll_page
+
+
+def test_scroll_binding_round_trips_through_the_slider():
+    existing = Binding(control="joystick_x", type="continuous", action="scroll_horizontal", params={"sensitivity": 2.5})
+    dialog = ActionConfigDialog("joystick_x", existing)
+    assert dialog._sensitivity_slider.value() == 25
+    result = dialog.result_binding()
+    assert result.action == "scroll_horizontal"
+    assert result.params["sensitivity"] == pytest.approx(2.5)
+
+
+def test_launch_program_binding_round_trips():
+    existing = Binding(control="pad_1", type="trigger", action="launch_program", params={"path": "C:/x/chrome.exe"})
+    dialog = ActionConfigDialog("pad_1", existing)
+    assert dialog._current_action() == "launch_program"
+    assert dialog.result_binding().params["path"] == "C:/x/chrome.exe"
+
+
+def test_switch_bank_binding_locks_the_other_tiles():
+    existing = Binding(control="key_0", type="trigger", action="switch_bank", params={"bank_id": "bank_a"})
+    dialog = ActionConfigDialog("key_0", existing, bank_names={"bank_a": "Home"})
+    assert dialog._tiles["launch_program"].isEnabled() is False
+    assert dialog._tiles["switch_bank"].isEnabled() is True
+    assert dialog.result_binding().action == "switch_bank"
+    assert dialog.result_bank_name() == "Home"
+
+
+def test_new_binding_defaults_to_first_action():
+    dialog = ActionConfigDialog("pad_5")
+    assert dialog._current_action() == ACTION_CHOICES[0][0]

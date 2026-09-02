@@ -378,7 +378,10 @@ class MainWindow(QMainWindow):
 
     def _on_control_configure_requested(self, control: str) -> None:
         existing = self._bindings.get(control)
-        dialog = ActionConfigDialog(control, existing, parent=self, bank_names=self._bank_names, accent_hex=self._accent_hex)
+        dialog = ActionConfigDialog(
+            control, existing, parent=self, bank_names=self._bank_names,
+            accent_hex=self._accent_hex, dark=self._theme == "dark",
+        )
         if not dialog.exec():
             return
         if control in self._config.switch_bindings:

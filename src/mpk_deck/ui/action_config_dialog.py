@@ -1,15 +1,20 @@
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QPointF, Qt
+from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QDialog,
-    QDialogButtonBox,
     QFileDialog,
+    QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QSlider,
     QStackedWidget,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -18,6 +23,8 @@ from mpk_deck.config import ACCENT_HEX
 from mpk_deck.core.action_registry import Binding
 from mpk_deck.core.nl_action import parse_nl_action
 from mpk_deck.core.program_finder import list_installed_programs
+from mpk_deck.ui.accent import hex_to_rgb_str, mix
+from mpk_deck.ui.knob_geometry import needle_angle
 
 ACTION_CHOICES = [
     ("launch_program", "\U0001f680", "Launch Program"),
@@ -49,43 +56,157 @@ PARAM_KEY = {
     "switch_bank": None,
 }
 
-def _dialog_qss(accent_hex: str) -> str:
+SENSITIVITY_MIN, SENSITIVITY_MAX = 0.1, 3.0
+
+
+def control_display_id(control: str) -> str:
+    """'pad_3' -> 'PAD 3', 'joystick_x' -> 'JOYSTICK X', 'key_5' -> 'KEY 5'."""
+    kind, _, rest = control.partition("_")
+    return f"{kind.upper()} {rest.upper()}".strip()
+
+
+def _kind_of(control: str) -> str:
+    return control.split("_")[0]
+
+
+def _dialog_qss(accent_hex: str, dark: bool) -> str:
+    accent_rgb = hex_to_rgb_str(accent_hex)
+    if dark:
+        card_bg = "qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 rgba(20,22,28,245), stop:1 rgba(10,12,16,238))"
+        ink, muted = "#f2f4f8", "rgba(242,244,248,130)"
+        field_bg, field_line = "rgba(255,255,255,16)", "rgba(255,255,255,36)"
+        tile_bg, tile_line = "rgba(255,255,255,13)", "rgba(255,255,255,30)"
+    else:
+        card_bg = "qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 rgba(255,255,255,240), stop:1 rgba(235,240,255,246))"
+        ink, muted = "#23242b", "rgba(35,36,43,140)"
+        field_bg, field_line = "rgba(255,255,255,180)", "rgba(120,120,140,80)"
+        tile_bg, tile_line = "rgba(255,255,255,140)", "rgba(120,120,140,70)"
     return f"""
-QDialog {{ background: #1c1e26; }}
-QLabel {{ color: #f2f4f8; font-size: 12px; }}
-QLabel#heading {{ font-size: 14px; font-weight: 600; }}
+QWidget#card {{
+    background: {card_bg};
+    border: 1px solid rgba({accent_rgb}, 110);
+    border-radius: 18px;
+}}
+QLabel {{ color: {ink}; font-size: 12px; }}
+QLabel#controlId {{ color: {accent_hex}; font-size: 12px; font-weight: 600; letter-spacing: 1px; }}
+QLabel#nowBinding {{ font-size: 14px; font-weight: 600; }}
+QLabel#nowBinding[empty="true"] {{ color: {muted}; font-weight: 400; }}
+QLabel#fieldLabel {{
+    color: {muted}; font-size: 10px; font-weight: 700; letter-spacing: 1px;
+}}
+QLabel#hint {{ color: {muted}; font-size: 11px; }}
 QLabel#nlError {{ color: #ff6b6b; font-size: 11px; }}
-QListWidget {{
-    background: #23242b;
-    border: 1px solid #33343d;
+
+QLineEdit, QListWidget, QTextEdit {{
+    background: {field_bg};
+    border: 1px solid {field_line};
     border-radius: 8px;
-    color: #f2f4f8;
+    color: {ink};
     font-size: 12px;
-    outline: none;
-}}
-QListWidget::item {{ padding: 8px; border-radius: 6px; }}
-QListWidget::item:selected {{ background: {accent_hex}; color: white; }}
-QListWidget::item:hover:!selected {{ background: #2c2e38; }}
-QLineEdit {{
-    background: #23242b;
-    border: 1px solid #33343d;
-    border-radius: 6px;
-    color: #f2f4f8;
     padding: 6px 8px;
-    font-size: 12px;
+    selection-background-color: {accent_hex};
 }}
-QPushButton {{
-    background: #2c2e38;
-    border: 1px solid #3a3c47;
-    border-radius: 6px;
-    color: #f2f4f8;
-    padding: 6px 14px;
-    font-size: 12px;
+QLineEdit:focus, QListWidget:focus, QTextEdit:focus {{ border: 1px solid {accent_hex}; }}
+QListWidget::item {{ padding: 5px 7px; border-radius: 6px; }}
+QListWidget::item:selected {{ background: {accent_hex}; color: white; }}
+QListWidget::item:hover:!selected {{ background: rgba({accent_rgb}, 30); }}
+
+QFrame#paramFrame {{
+    background: {field_bg};
+    border: 1px solid {field_line};
+    border-radius: 12px;
 }}
-QPushButton:hover {{ background: #363844; }}
-QPushButton#primary {{ background: {accent_hex}; border: none; font-weight: 600; }}
-QPushButton#primary:hover {{ background: #4b7bf5; }}
+
+QPushButton#tile {{
+    background: {tile_bg};
+    border: 1px solid {tile_line};
+    border-radius: 11px;
+    color: {ink};
+    font-size: 10px;
+    padding: 8px 2px;
+    text-align: center;
+}}
+QPushButton#tile:hover {{ background: rgba({accent_rgb}, 26); }}
+QPushButton#tile:checked {{ border: 1px solid {accent_hex}; background: rgba({accent_rgb}, 36); }}
+
+QToolButton#nlToggle {{
+    border: none; background: transparent; color: {accent_hex};
+    font-size: 12px; font-weight: 600; padding: 0;
+}}
+
+QPushButton#ghost, QPushButton#primary {{
+    border-radius: 9px; font-size: 12px; font-weight: 600; padding: 7px 18px;
+}}
+QPushButton#ghost {{ background: transparent; border: 1px solid {field_line}; color: {ink}; }}
+QPushButton#ghost:hover {{ background: rgba({accent_rgb}, 22); }}
+QPushButton#primary {{ background: {accent_hex}; border: none; color: white; }}
+QPushButton#primary:hover {{ background: {mix(accent_hex, (255, 255, 255), 0.16)}; }}
+
+QSlider::groove:horizontal {{ height: 4px; background: {field_line}; border-radius: 2px; }}
+QSlider::handle:horizontal {{
+    width: 14px; height: 14px; margin: -6px 0; border-radius: 7px; background: {accent_hex};
+}}
+QSlider::sub-page:horizontal {{ background: {accent_hex}; border-radius: 2px; }}
+
+QScrollBar:vertical {{ width: 8px; background: transparent; margin: 2px; }}
+QScrollBar::handle:vertical {{ background: {field_line}; border-radius: 4px; min-height: 24px; }}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; }}
 """
+
+
+class _ControlChip(QWidget):
+    """A small painted replica of the physical control being wired - the same
+    shape and accent treatment it has on the deck, so the dialog reads as
+    'you're patching THIS pad', not editing an abstract row."""
+
+    def __init__(self, control: str, accent_hex: str, parent=None) -> None:
+        super().__init__(parent)
+        self._kind = _kind_of(control)
+        self._accent = accent_hex
+        self._glyph = ""
+        self.setFixedSize(58, 58)
+
+    def set_glyph(self, glyph: str) -> None:
+        self._glyph = glyph
+        self.update()
+
+    def paintEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        accent = QColor(self._accent)
+        rect = self.rect().adjusted(3, 3, -3, -3)
+
+        pen = QPen(accent, 2)
+        painter.setPen(pen)
+        painter.setBrush(QColor(accent.red(), accent.green(), accent.blue(), 28))
+
+        if self._kind == "knob":
+            painter.drawEllipse(rect)
+            painter.save()
+            painter.translate(QPointF(self.width() / 2, self.height() / 2))
+            painter.rotate(needle_angle(0.5))
+            npen = QPen(accent, 3)
+            npen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            painter.setPen(npen)
+            painter.drawLine(QPointF(0, 3), QPointF(0, -rect.height() / 2 + 6))
+            painter.restore()
+        elif self._kind == "joystick":
+            painter.drawEllipse(rect)
+            painter.setBrush(accent)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawEllipse(QPointF(self.width() / 2 + 8, self.height() / 2), 5, 5)
+        elif self._kind == "key":
+            painter.drawRoundedRect(rect.adjusted(9, 0, -9, 0), 4, 4)
+        else:  # pad
+            painter.drawRoundedRect(rect, 12, 12)
+
+        if self._glyph:
+            painter.setPen(QColor(self._accent))
+            font = painter.font()
+            font.setPixelSize(20)
+            painter.setFont(font)
+            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self._glyph)
 
 
 class ActionConfigDialog(QDialog):
@@ -96,77 +217,38 @@ class ActionConfigDialog(QDialog):
         parent: QWidget | None = None,
         bank_names: dict[str, str] | None = None,
         accent_hex: str = ACCENT_HEX,
+        dark: bool = True,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(f"Configure {control}")
-        self.setMinimumSize(480, 320)
-        self.setStyleSheet(_dialog_qss(accent_hex))
+        self.setModal(True)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setFixedWidth(468)
         self._control = control
         self._bank_names = bank_names or {}
+        self._accent_hex = accent_hex
         self._locked = existing is not None and existing.action == "switch_bank"
 
-        heading = QLabel(f"Configure {control}")
-        heading.setObjectName("heading")
+        card = QWidget(self)
+        card.setObjectName("card")
+        card.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        card.setStyleSheet(_dialog_qss(accent_hex, dark))
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(card)
 
-        self._action_list = QListWidget(self)
-        self._action_list.setFixedWidth(170)
-        for action_name, glyph, label in ACTION_CHOICES:
-            item = QListWidgetItem(f"{glyph}  {label}")
-            item.setData(Qt.ItemDataRole.UserRole, action_name)
-            self._action_list.addItem(item)
-        self._action_list.currentRowChanged.connect(self._on_action_changed)
+        root = QVBoxLayout(card)
+        root.setContentsMargins(20, 18, 20, 16)
+        root.setSpacing(16)
 
-        self._param_stack = QStackedWidget(self)
-        self._path_edit = self._build_program_picker_page()
-        self._url_edit = self._build_line_edit_page("https://example.com")
-        self._title_edit = self._build_line_edit_page("Window title contains...")
-        self._volume_page = self._build_volume_page()
-        self._bank_name_edit = self._build_bank_name_page()
-        self._sensitivity_edit = self._build_sensitivity_page()
-        # Which _param_stack page each action shows. The action list has 7 rows but
-        # only 6 pages (both scroll actions share the sensitivity page), so the row
-        # index is NOT the page index - map by action name. Order matches the
-        # _build_* calls above.
-        self._page_for_action = {
-            "launch_program": 0,
-            "open_url": 1,
-            "focus_window": 2,
-            "set_system_volume": 3,
-            "switch_bank": 4,
-            "scroll_horizontal": 5,
-            "scroll_vertical": 5,
-        }
+        root.addLayout(self._build_header(existing))
+        root.addLayout(self._build_action_picker())
+        root.addWidget(self._build_param_stack())
+        root.addWidget(self._build_nl_section())
+        root.addLayout(self._build_buttons())
 
-        body = QHBoxLayout()
-        body.addWidget(self._action_list)
-        body.addWidget(self._param_stack, stretch=1)
-
-        self._nl_edit = QLineEdit(self)
-        self._nl_edit.setPlaceholderText("or describe what you want...")
-        self._nl_generate_btn = QPushButton("Generate", self)
-        self._nl_generate_btn.clicked.connect(self._on_generate_clicked)
-        self._nl_error = QLabel("", self)
-        self._nl_error.setObjectName("nlError")
-
-        nl_row = QHBoxLayout()
-        nl_row.addWidget(self._nl_edit, stretch=1)
-        nl_row.addWidget(self._nl_generate_btn)
-
-        buttons = QDialogButtonBox(self)
-        ok_button = buttons.addButton("Save", QDialogButtonBox.ButtonRole.AcceptRole)
-        ok_button.setObjectName("primary")
-        buttons.addButton("Cancel", QDialogButtonBox.ButtonRole.RejectRole)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-
-        root = QVBoxLayout(self)
-        root.setContentsMargins(20, 20, 20, 16)
-        root.setSpacing(14)
-        root.addWidget(heading)
-        root.addLayout(nl_row)
-        root.addWidget(self._nl_error)
-        root.addLayout(body, stretch=1)
-        root.addWidget(buttons)
+        self._drag_offset = None
 
         if existing is not None:
             self._apply_binding(existing)
@@ -175,22 +257,184 @@ class ActionConfigDialog(QDialog):
         if self._locked:
             self._lock_to_switch_bank()
 
-    def _build_program_picker_page(self) -> QLineEdit:
-        page = QWidget(self)
+    # frameless: drag the card from any empty area to move the dialog
+    def mousePressEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        if self._drag_offset is not None and event.buttons() & Qt.MouseButton.LeftButton:
+            self.move(event.globalPosition().toPoint() - self._drag_offset)
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        self._drag_offset = None
+        super().mouseReleaseEvent(event)
+
+    # ---- header: control chip + id + current binding -----------------------
+
+    def _build_header(self, existing: Binding | None) -> QHBoxLayout:
+        self._chip = _ControlChip(self._control, self._accent_hex)
+        meta = QVBoxLayout()
+        meta.setSpacing(2)
+        control_id = QLabel(control_display_id(self._control))
+        control_id.setObjectName("controlId")
+        self._now_label = QLabel()
+        self._now_label.setObjectName("nowBinding")
+        self._set_now_binding(existing)
+        meta.addStretch(1)
+        meta.addWidget(control_id)
+        meta.addWidget(self._now_label)
+        meta.addStretch(1)
+
+        row = QHBoxLayout()
+        row.setSpacing(14)
+        row.addWidget(self._chip)
+        row.addLayout(meta, stretch=1)
+        return row
+
+    def _set_now_binding(self, existing: Binding | None) -> None:
+        if existing is None:
+            self._now_label.setText("비어 있음")
+            self._now_label.setProperty("empty", "true")
+            return
+        glyph = ACTION_GLYPHS.get(existing.action, "")
+        label = ACTION_LABELS.get(existing.action, existing.action)
+        key = PARAM_KEY.get(existing.action)
+        detail = str(existing.params.get(key, "")) if key else ""
+        text = f"{glyph} {label}".strip()
+        if detail:
+            text += f" · {detail}"
+        self._now_label.setText(text)
+        self._now_label.setProperty("empty", "false")
+
+    # ---- action picker: icon tiles ----------------------------------------
+
+    def _build_action_picker(self) -> QVBoxLayout:
+        wrap = QVBoxLayout()
+        wrap.setSpacing(9)
+        heading = QLabel("무엇을 할까요")
+        heading.setObjectName("fieldLabel")
+        wrap.addWidget(heading)
+
+        grid = QGridLayout()
+        grid.setSpacing(8)
+        self._action_group = QButtonGroup(self)
+        self._action_group.setExclusive(True)
+        self._tiles: dict[str, QPushButton] = {}
+        for i, (name, glyph, label) in enumerate(ACTION_CHOICES):
+            tile = QPushButton(f"{glyph}\n{label}")
+            tile.setObjectName("tile")
+            tile.setCheckable(True)
+            tile.setMinimumHeight(46)
+            tile.clicked.connect(lambda _checked, n=name: self._on_action_selected(n))
+            self._action_group.addButton(tile)
+            self._tiles[name] = tile
+            grid.addWidget(tile, i // 4, i % 4)
+        for col in range(4):
+            grid.setColumnStretch(col, 1)
+        wrap.addLayout(grid)
+        return wrap
+
+    # ---- param area: one frame, one page per action ---------------------
+
+    def _build_param_stack(self) -> QFrame:
+        frame = QFrame()
+        frame.setObjectName("paramFrame")
+        frame_layout = QVBoxLayout(frame)
+        frame_layout.setContentsMargins(14, 12, 14, 12)
+
+        self._param_stack = QStackedWidget()
+        frame_layout.addWidget(self._param_stack)
+
+        self._path_edit = self._add_program_page()
+        self._url_edit = self._add_line_page("open_url", "주소", "https://example.com", "기본 브라우저에서 엽니다.")
+        self._title_edit = self._add_line_page(
+            "focus_window", "창 제목에 포함된 글자", "예: Chrome", "제목이 일치하는 첫 창을 앞으로 가져옵니다."
+        )
+        self._add_note_page("set_system_volume", "시스템 볼륨", "노브를 돌리면 시스템 볼륨이 따라갑니다. 추가 설정 없음.")
+        self._sensitivity_slider = self._add_sensitivity_page()
+        self._bank_name_edit = self._add_line_page("switch_bank", "뱅크 이름", "예: 트레이딩", "이 컨트롤이 해당 뱅크로 영구 전환됩니다.")
+
+        # both scroll actions share the sensitivity page; everything else is 1:1
+        self._page_for_action = {
+            "launch_program": 0,
+            "open_url": 1,
+            "focus_window": 2,
+            "set_system_volume": 3,
+            "scroll_horizontal": 4,
+            "scroll_vertical": 4,
+            "switch_bank": 5,
+        }
+        return frame
+
+    def _page_shell(self, label_text: str) -> tuple[QWidget, QVBoxLayout]:
+        page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+        label = QLabel(label_text)
+        label.setObjectName("fieldLabel")
+        layout.addWidget(label)
+        return page, layout
 
-        search = QLineEdit(page)
-        search.setPlaceholderText("Search installed programs...")
-        program_list = QListWidget(page)
+    def _add_line_page(self, action: str, label_text: str, placeholder: str, hint: str) -> QLineEdit:
+        page, layout = self._page_shell(label_text)
+        edit = QLineEdit()
+        edit.setPlaceholderText(placeholder)
+        layout.addWidget(edit)
+        hint_label = QLabel(hint)
+        hint_label.setObjectName("hint")
+        hint_label.setWordWrap(True)
+        layout.addWidget(hint_label)
+        layout.addStretch(1)
+        self._param_stack.addWidget(page)
+        return edit
+
+    def _add_note_page(self, action: str, label_text: str, note: str) -> None:
+        page, layout = self._page_shell(label_text)
+        note_label = QLabel(note)
+        note_label.setObjectName("hint")
+        note_label.setWordWrap(True)
+        layout.addWidget(note_label)
+        layout.addStretch(1)
+        self._param_stack.addWidget(page)
+
+    def _add_sensitivity_page(self) -> QSlider:
+        page, layout = self._page_shell("스크롤 감도")
+        slider = QSlider(Qt.Orientation.Horizontal)
+        slider.setRange(int(SENSITIVITY_MIN * 10), int(SENSITIVITY_MAX * 10))
+        slider.setValue(10)
+        value_label = QLabel("1.0×")
+        value_label.setObjectName("hint")
+        slider.valueChanged.connect(lambda v: value_label.setText(f"{v / 10:.1f}×"))
+        row = QHBoxLayout()
+        row.addWidget(slider, stretch=1)
+        row.addWidget(value_label)
+        layout.addLayout(row)
+        hint_label = QLabel("조이스틱을 끝까지 밀었을 때의 스크롤 속도.")
+        hint_label.setObjectName("hint")
+        layout.addWidget(hint_label)
+        layout.addStretch(1)
+        self._param_stack.addWidget(page)
+        return slider
+
+    def _add_program_page(self) -> QLineEdit:
+        page, layout = self._page_shell("프로그램")
+        search = QLineEdit()
+        search.setPlaceholderText("설치된 프로그램 검색…")
+        program_list = QListWidget()
+        program_list.setMaximumHeight(96)
         for program in list_installed_programs():
             item = QListWidgetItem(program.name)
             item.setData(Qt.ItemDataRole.UserRole, program.path)
             program_list.addItem(item)
 
-        path_edit = QLineEdit(page)
-        path_edit.setPlaceholderText("Selected program path")
-        browse_button = QPushButton("Browse...", page)
+        path_edit = QLineEdit()
+        path_edit.setPlaceholderText("선택된 프로그램 경로")
+        browse_button = QPushButton("찾아보기…")
+        browse_button.setObjectName("ghost")
 
         def filter_programs(text: str) -> None:
             text = text.lower()
@@ -220,57 +464,92 @@ class ActionConfigDialog(QDialog):
         self._param_stack.addWidget(page)
         return path_edit
 
-    def _build_line_edit_page(self, placeholder: str) -> QLineEdit:
-        page = QWidget(self)
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(0, 0, 0, 0)
-        edit = QLineEdit(page)
-        edit.setPlaceholderText(placeholder)
-        layout.addWidget(edit)
-        layout.addStretch(1)
-        self._param_stack.addWidget(page)
-        return edit
+    # ---- natural-language: collapsed until asked for --------------------
 
-    def _build_volume_page(self) -> QWidget:
-        page = QWidget(self)
-        layout = QVBoxLayout(page)
+    def _build_nl_section(self) -> QWidget:
+        container = QWidget()
+        layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(QLabel("Controls system volume as the knob turns. No extra settings needed.", page))
-        layout.addStretch(1)
-        self._param_stack.addWidget(page)
-        return page
+        layout.setSpacing(8)
 
-    def _build_bank_name_page(self) -> QLineEdit:
-        page = QWidget(self)
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(0, 0, 0, 0)
-        edit = QLineEdit(page)
-        edit.setPlaceholderText("Bank name")
-        layout.addWidget(edit)
-        layout.addStretch(1)
-        self._param_stack.addWidget(page)
-        return edit
+        self._nl_toggle = QToolButton()
+        self._nl_toggle.setObjectName("nlToggle")
+        self._nl_toggle.setText("✨ 말로 설명하기")
+        self._nl_toggle.setCheckable(True)
+        self._nl_toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+        self._nl_toggle.toggled.connect(self._on_nl_toggled)
+        layout.addWidget(self._nl_toggle, alignment=Qt.AlignmentFlag.AlignLeft)
 
-    def _build_sensitivity_page(self) -> QLineEdit:
-        page = QWidget(self)
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(QLabel("Scroll sensitivity (0.1 - 3.0, default 1.0):", page))
-        edit = QLineEdit(page)
-        edit.setText("1.0")
-        layout.addWidget(edit)
-        layout.addStretch(1)
-        self._param_stack.addWidget(page)
-        return edit
+        self._nl_body = QWidget()
+        body = QVBoxLayout(self._nl_body)
+        body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(6)
+        self._nl_edit = QLineEdit()
+        self._nl_edit.setPlaceholderText("예: 크롬을 열고 유튜브로 이동")
+        body.addWidget(self._nl_edit)
+        gen_row = QHBoxLayout()
+        note = QLabel("Claude Haiku가 제안 · 저장 전 검토")
+        note.setObjectName("hint")
+        self._nl_generate_btn = QPushButton("만들기")
+        self._nl_generate_btn.setObjectName("primary")
+        self._nl_generate_btn.clicked.connect(self._on_generate_clicked)
+        gen_row.addWidget(note)
+        gen_row.addStretch(1)
+        gen_row.addWidget(self._nl_generate_btn)
+        body.addLayout(gen_row)
+        self._nl_error = QLabel("")
+        self._nl_error.setObjectName("nlError")
+        body.addWidget(self._nl_error)
+        self._nl_body.setVisible(False)
+        layout.addWidget(self._nl_body)
+        return container
+
+    def _on_nl_toggled(self, checked: bool) -> None:
+        self._nl_body.setVisible(checked)
+        self._nl_toggle.setText(("▾ " if checked else "✨ ") + "말로 설명하기")
+        self.layout().activate()
+        self.resize(self.width(), self.sizeHint().height())
+
+    # ---- footer buttons -------------------------------------------------
+
+    def _build_buttons(self) -> QHBoxLayout:
+        row = QHBoxLayout()
+        row.addStretch(1)
+        cancel = QPushButton("취소")
+        cancel.setObjectName("ghost")
+        cancel.clicked.connect(self.reject)
+        save = QPushButton("저장")
+        save.setObjectName("primary")
+        save.setDefault(True)
+        save.clicked.connect(self.accept)
+        row.addWidget(cancel)
+        row.addWidget(save)
+        return row
+
+    # ---- selection / state --------------------------------------------
 
     def _param_edit_for(self, action: str) -> QLineEdit | None:
-        return {"launch_program": self._path_edit, "open_url": self._url_edit, "focus_window": self._title_edit}.get(
-            action
-        )
+        return {
+            "launch_program": self._path_edit,
+            "open_url": self._url_edit,
+            "focus_window": self._title_edit,
+        }.get(action)
 
     def _select_action(self, action: str) -> None:
-        index = next((i for i, (name, _, _) in enumerate(ACTION_CHOICES) if name == action), 0)
-        self._action_list.setCurrentRow(index)
+        tile = self._tiles.get(action)
+        if tile is not None:
+            tile.setChecked(True)
+        self._on_action_selected(action)
+
+    def _on_action_selected(self, action: str) -> None:
+        self._param_stack.setCurrentIndex(self._page_for_action.get(action, 0))
+        self._chip.set_glyph(ACTION_GLYPHS.get(action, ""))
+
+    def _current_action(self) -> str:
+        for name, tile in self._tiles.items():
+            if tile.isChecked():
+                return name
+        return ACTION_CHOICES[0][0]
 
     def _apply_binding(self, binding: Binding) -> None:
         self._select_action(binding.action)
@@ -279,7 +558,7 @@ class ActionConfigDialog(QDialog):
             self._bank_name_edit.setText(self._bank_names.get(bank_id, ""))
             return
         if binding.action in ("scroll_horizontal", "scroll_vertical"):
-            self._sensitivity_edit.setText(str(binding.params.get("sensitivity", 1.0)))
+            self._sensitivity_slider.setValue(round(float(binding.params.get("sensitivity", 1.0)) * 10))
             return
         key = PARAM_KEY.get(binding.action)
         if key:
@@ -288,10 +567,10 @@ class ActionConfigDialog(QDialog):
                 edit.setText(str(binding.params.get(key, "")))
 
     def _lock_to_switch_bank(self) -> None:
-        for i in range(self._action_list.count()):
-            item = self._action_list.item(i)
-            if item.data(Qt.ItemDataRole.UserRole) != "switch_bank":
-                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
+        for name, tile in self._tiles.items():
+            if name != "switch_bank":
+                tile.setEnabled(False)
+        self._nl_toggle.setEnabled(False)
         self._nl_edit.setEnabled(False)
         self._nl_generate_btn.setEnabled(False)
 
@@ -306,16 +585,11 @@ class ActionConfigDialog(QDialog):
             self._nl_generate_btn.setEnabled(True)
 
         if binding is None:
-            self._nl_error.setText("Couldn't figure that out - try rephrasing, or check ANTHROPIC_API_KEY in .env")
+            self._nl_error.setText("이해하지 못했어요 — 다르게 말해보거나 .env의 ANTHROPIC_API_KEY를 확인하세요")
             return
         self._apply_binding(binding)
 
-    def _on_action_changed(self, index: int) -> None:
-        self._param_stack.setCurrentIndex(self._page_for_action.get(self._current_action(), 0))
-
-    def _current_action(self) -> str:
-        item = self._action_list.currentItem()
-        return item.data(Qt.ItemDataRole.UserRole) if item else ACTION_CHOICES[0][0]
+    # ---- results -----------------------------------------------------
 
     def result_binding(self) -> Binding:
         action = self._current_action()
@@ -324,11 +598,7 @@ class ActionConfigDialog(QDialog):
             # locked control's target) - this dialog only ever supplies the name.
             return Binding(control=self._control, type="trigger", action="switch_bank", params={})
         if action in ("scroll_horizontal", "scroll_vertical"):
-            try:
-                sensitivity = float(self._sensitivity_edit.text())
-            except ValueError:
-                sensitivity = 1.0
-            sensitivity = max(0.1, min(3.0, sensitivity))
+            sensitivity = max(SENSITIVITY_MIN, min(SENSITIVITY_MAX, self._sensitivity_slider.value() / 10))
             return Binding(control=self._control, type="continuous", action=action, params={"sensitivity": sensitivity})
         key = PARAM_KEY.get(action)
         edit = self._param_edit_for(action)

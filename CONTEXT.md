@@ -237,7 +237,33 @@
   항상 `None`. `ANTHROPIC_API_KEY`는 `.env`(gitignored)에서
   `python-dotenv`로 `__main__.py`가 앱 시작 시 로드 — 앱 내 키 입력 UI 없음.
   `action_config_dialog.py`가 이 함수 호출 결과로 기존 폼 필드만 채움,
-  저장은 여전히 사용자가 Save를 눌러야 함.
+  저장은 여전히 사용자가 Save를 눌러야 함. `apply_layout`(레이아웃 이름 →
+  layout id)도 커버.
+
+- **Workspace Layouts** (`core/layout_store.py` + `core/window_layout.py` +
+  `core/browser_url.py` + `apply_layout` 핸들러 + `ui/layout_capture_dialog.py`,
+  spec/plan `docs/superpowers/{specs,plans}/2026-09-02-workspace-layouts*`):
+  한 패드가 프로그램 + 브라우저 사이트 여러 개를 저장된 위치·크기로 연다.
+  - 레이아웃 = `%APPDATA%\mpk-deck\layouts.yaml`(`config.LAYOUTS_PATH`,
+    `config.user_data_dir()`)의 named 항목 리스트. 항목 = `kind: program|url`,
+    `rect`(x/y/w/h 물리px), `maximized`, `title_match`. `load_layouts`/
+    `save_layouts`(atomic, `allow_unicode`)/`generate_layout_id`는
+    `action_registry` 패턴 복사.
+  - `apply_layout` 트리거 핸들러가 layout을 로드하고 `restore_layout`을
+    **데몬 스레드**에서 실행(앱 실행·창 폴링이 수 초 걸려서 GUI 스레드 블록
+    금지). 이미 열린 창은 `match_window`로 찾아 재배치(중복 실행 안 함),
+    없으면 실행 후 창 뜰 때까지 폴링 → `position_window`(보이는 모니터
+    work-area로 clamp, 브라우저 post-show relayout 대비 두 번 배치).
+  - `list_open_windows`/`capture_item`/`position_window`는 win32 직접,
+    `restore_layout`/`match_window`/`clamp_rect_to_monitors`는 seam 주입 +
+    pytest 커버. `browser_url.active_tab_url`는 UIA(`comtypes`, 새 dep 없음)
+    best-effort — Chrome/Edge 확인, Firefox best-effort, 실패 시 None →
+    capture 다이얼로그의 수동 URL 필드가 폴백. Edge에서 라이브 검증됨.
+  - config 다이얼로그: "레이아웃" 액션(드롭다운 + 새로 저장…/편집… →
+    `LayoutCaptureDialog`, 열린 창 체크리스트). `Binding.label`/`icon`은 이
+    액션에도 적용됨(switch_bank과 달리 잠기지 않음).
+  - **미완**: `config/actions.yaml` + `QSettings`를 `user_data_dir()` 아래로
+    옮기는 마이그레이션(별도 태스크). 조이스틱 Y bipolar Editor 작업.
 
 ## 기술 스택 / 실행
 

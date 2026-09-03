@@ -2,7 +2,18 @@
 
 **Date:** 2026-09-03
 **Repo:** mpk-deck
-**Status:** approved for implementation (Claude wrote this spec)
+**Status:** implemented on branch `d-rest-action-types` (Codex), independently
+reviewed (Claude/Opus). Not hardware-verified.
+
+**Post-review adjustments (2026-09-03):** `_BRIGHTNESS_MIN_INTERVAL_S` shipped
+at **0.3 s** (~3 Hz), not the 0.1 s / "10 Hz" written below — at 0.1 s the
+window is ~one WMI call's cost, so it did not bound GUI-thread occupancy.
+Parked (not fixed on this branch): (a) the dropped final knob value is
+proportional to turn speed — proper fix is a latest-value-wins worker
+thread, entangled with the open volume-knob COM investigation; (b) a
+continuous action can still be bound to a pad/key and silently no-op
+(pre-existing for volume/scroll — a control-kind filter on the tile picker +
+NL is a follow-up task).
 **Round:** sub-project **D-rest** — the part of "action type expansion" left
 after the window remember/restore part was split out as Workspace Layouts
 (2026-09-02). Adds the three remaining action types the D item named plus

@@ -58,7 +58,7 @@
   `open_url`, `focus_window`, `set_system_volume`, `scroll_horizontal`/
   `scroll_vertical` — 진짜 `win32api.mouse_event` 휠 주입, 합성
   `PostMessage` 아님), `set_display_brightness`(continuous, WMI 내장 패널,
-  약 10 Hz throttle), `run_shell_command`(trigger, `shell=True`
+  약 3 Hz throttle, `_BRIGHTNESS_MIN_INTERVAL_S=0.3`), `run_shell_command`(trigger, `shell=True`
   fire-and-forget), `media_key`(trigger, `keybd_event` VK_MEDIA_*). 트리거 핸들러는
   `(params: dict) -> None`, continuous 핸들러는
   `(params: dict, value: float) -> None` 시그니처를 따른다. Windows 전용

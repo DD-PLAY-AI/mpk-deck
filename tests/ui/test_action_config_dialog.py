@@ -3,7 +3,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QLabel
 
 from mpk_deck.core.action_registry import Binding
 from mpk_deck.ui.action_config_dialog import ACTION_CHOICES, ActionConfigDialog, control_display_id
@@ -165,4 +165,6 @@ def test_media_key_round_trips_and_reloads():
 def test_brightness_selects_its_page():
     dialog = ActionConfigDialog("knob_2")
     dialog._select_action("set_display_brightness")
-    assert dialog._param_stack.currentIndex() == dialog._page_for_action["set_display_brightness"]
+    page = dialog._param_stack.currentWidget()
+    texts = [lbl.text() for lbl in page.findChildren(QLabel)]
+    assert any("디스플레이 밝기" in t for t in texts)

@@ -1,4 +1,13 @@
+import pytest
+
 from mpk_deck.core import handlers
+
+
+@pytest.fixture(autouse=True)
+def _clear_brightness_throttle():
+    handlers._LAST_APPLIED.clear()
+    yield
+    handlers._LAST_APPLIED.clear()
 
 
 def test_launch_program_calls_popen_with_path(monkeypatch):
@@ -59,32 +68,27 @@ def test_set_system_volume_passes_through_valid_value():
     assert calls == [0.42]
 
 
-def test_set_display_brightness_converts_normalized_value_to_percent(monkeypatch):
-    handlers._LAST_APPLIED.clear()
+def test_set_display_brightness_converts_normalized_value_to_percent():
     calls = []
+    # spaced past _BRIGHTNESS_MIN_INTERVAL_S so each call applies
     handlers.set_display_brightness({}, 0.5, brightness_setter=calls.append, now=0.0)
-    handlers._LAST_APPLIED.clear()
-    handlers.set_display_brightness({}, 0.0, brightness_setter=calls.append, now=0.0)
-    handlers._LAST_APPLIED.clear()
-    handlers.set_display_brightness({}, 1.0, brightness_setter=calls.append, now=0.0)
+    handlers.set_display_brightness({}, 0.0, brightness_setter=calls.append, now=0.4)
+    handlers.set_display_brightness({}, 1.0, brightness_setter=calls.append, now=0.8)
     assert calls == [50, 0, 100]
 
 
-def test_set_display_brightness_clamps_out_of_range(monkeypatch):
-    handlers._LAST_APPLIED.clear()
+def test_set_display_brightness_clamps_out_of_range():
     calls = []
     handlers.set_display_brightness({}, 1.7, brightness_setter=calls.append, now=0.0)
-    handlers._LAST_APPLIED.clear()
-    handlers.set_display_brightness({}, -0.3, brightness_setter=calls.append, now=0.0)
+    handlers.set_display_brightness({}, -0.3, brightness_setter=calls.append, now=0.4)
     assert calls == [100, 0]
 
 
 def test_set_display_brightness_throttles_rapid_calls():
-    handlers._LAST_APPLIED.clear()
     calls = []
     handlers.set_display_brightness({}, 0.1, brightness_setter=calls.append, now=0.00)
-    handlers.set_display_brightness({}, 0.2, brightness_setter=calls.append, now=0.05)  # dropped
-    handlers.set_display_brightness({}, 0.3, brightness_setter=calls.append, now=0.20)  # applied
+    handlers.set_display_brightness({}, 0.2, brightness_setter=calls.append, now=0.05)  # dropped (< 0.3s)
+    handlers.set_display_brightness({}, 0.3, brightness_setter=calls.append, now=0.40)  # applied
     assert calls == [10, 30]
 
 

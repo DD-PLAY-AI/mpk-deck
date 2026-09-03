@@ -11,7 +11,10 @@ logger = logging.getLogger(__name__)
 # (WMI brightness is ~50-100ms/call and a knob emits tens of events/second).
 # ponytail: module dict, fine for the handful of throttled controls we have.
 _LAST_APPLIED: dict[str, float] = {}
-_BRIGHTNESS_MIN_INTERVAL_S = 0.1  # ~10 Hz; brightness is coarse enough that a dropped tick is invisible
+# One WMI SetBrightness call is ~50-100ms; the interval must sit well above that so a
+# knob sweep can't peg the GUI thread (continuous dispatch is marshalled there). At 0.3s
+# occupancy stays ~1/3, and a dropped intermediate value is imperceptible for brightness.
+_BRIGHTNESS_MIN_INTERVAL_S = 0.3
 
 
 def _should_apply_now(key: str, min_interval_s: float, now: float) -> bool:

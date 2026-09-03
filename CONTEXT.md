@@ -57,7 +57,9 @@
 - `core/handlers.py`: 실제 side-effect 핸들러 (`launch_program`,
   `open_url`, `focus_window`, `set_system_volume`, `scroll_horizontal`/
   `scroll_vertical` — 진짜 `win32api.mouse_event` 휠 주입, 합성
-  `PostMessage` 아님). 트리거 핸들러는
+  `PostMessage` 아님), `set_display_brightness`(continuous, WMI 내장 패널,
+  약 10 Hz throttle), `run_shell_command`(trigger, `shell=True`
+  fire-and-forget), `media_key`(trigger, `keybd_event` VK_MEDIA_*). 트리거 핸들러는
   `(params: dict) -> None`, continuous 핸들러는
   `(params: dict, value: float) -> None` 시그니처를 따른다. Windows 전용
   의존성(`win32gui`, `pycaw`)은 함수 내부에서 지연 import — 모듈 로드
@@ -409,6 +411,11 @@ Artifact로 게시)으로 디자인을 다시 잡는 쪽으로 커졌고, 최종
    필요), 노브로 소리/밝기 조절, 쉘 커맨드 실행, 미디어 컨트롤 등. 전부
    `core/nl_action.py` 자연어 설정으로도 커버. 제일 크고 안에서도 더
    쪼개질 수 있음 — B 다음이지만 C/E 이후.
+   - **D-rest(밝기 / 셸 명령 / 미디어 키 + NL)는 구현·커밋 완료, 하드웨어
+     미검증.** 사용자 라이브 확인: 실제 내장 패널 밝기 변경, 미디어 키가
+     실제 플레이어에 도달하는지, 실제 API 키로 NL 다이얼로그가 세 액션을
+     모두 제안하는지. 밝기는 continuous-dispatch 경로에서 `win32com` COM을
+     사용하므로, 아직 열린 volume-knob 버그와 같은 공유 위험이 있다.
 5. **E. 노브 마우스 휠 조작** — ExpandedView 노브 위에서 마우스 휠 돌리면
    해당 노브의 continuous 액션이 값 변경(휠은 델타값이라 절대값 아닌 누적
    로직 필요).

@@ -107,6 +107,22 @@ def test_run_shell_command_empty_or_missing_is_noop():
     assert calls == []
 
 
+def test_media_key_sends_correct_virtual_key():
+    calls = []
+    handlers.media_key({"key": "play_pause"}, sender=calls.append)
+    handlers.media_key({"key": "next"}, sender=calls.append)
+    handlers.media_key({"key": "prev"}, sender=calls.append)
+    handlers.media_key({"key": "stop"}, sender=calls.append)
+    assert calls == [0xB3, 0xB0, 0xB1, 0xB2]
+
+
+def test_media_key_unknown_or_missing_is_noop():
+    calls = []
+    handlers.media_key({"key": "volume_up"}, sender=calls.append)
+    handlers.media_key({}, sender=calls.append)
+    assert calls == []
+
+
 def test_scroll_notches_scales_linearly_with_sensitivity():
     assert handlers._scroll_notches(1.0, 1.0) == 3
     assert handlers._scroll_notches(1.0, 2.0) == 6

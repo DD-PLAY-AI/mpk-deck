@@ -132,6 +132,27 @@ def _default_command_runner(command: str) -> None:
     )
 
 
+_MEDIA_VK = {"play_pause": 0xB3, "next": 0xB0, "prev": 0xB1, "stop": 0xB2}
+
+
+def media_key(params: dict, *, sender=None) -> None:
+    """Send a media transport key to the OS. No-op-looking when nothing in the
+    foreground consumes media keys - that is expected, not an error."""
+    vk = _MEDIA_VK.get(params.get("key"))
+    if vk is None:
+        logger.info("media_key: unknown key %r", params.get("key"))
+        return
+    (sender or _default_media_key_sender)(vk)
+
+
+def _default_media_key_sender(vk: int) -> None:
+    import win32api
+    import win32con
+
+    win32api.keybd_event(vk, 0, 0, 0)
+    win32api.keybd_event(vk, 0, win32con.KEYEVENTF_KEYUP, 0)
+
+
 def _default_volume_setter(value: float) -> None:
     from ctypes import POINTER, cast
 

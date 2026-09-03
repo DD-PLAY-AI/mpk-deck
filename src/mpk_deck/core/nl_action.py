@@ -18,6 +18,9 @@ ACTION_TYPE = {
     "focus_window": "trigger",
     "set_system_volume": "continuous",
     "apply_layout": "trigger",
+    "set_display_brightness": "continuous",
+    "run_shell_command": "trigger",
+    "media_key": "trigger",
 }
 
 _TOOL = {
@@ -26,6 +29,7 @@ _TOOL = {
         "Propose one mpk-deck action binding for the user's plain-language request. "
         "`program_name` (for launch_program) must exactly match one of the provided "
         "installed program names -- never invent a path or program that isn't listed."
+        " run_shell_command's command is run in a shell; media_key is one of play_pause/next/prev/stop."
     ),
     "input_schema": {
         "type": "object",
@@ -41,6 +45,15 @@ _TOOL = {
             "url": {"type": "string", "description": "Required for open_url."},
             "title_contains": {"type": "string", "description": "Required for focus_window."},
             "layout_name": {"type": "string", "description": "Required for apply_layout; the name of a saved layout."},
+            "command": {
+                "type": "string",
+                "description": "Required for run_shell_command; a shell command line (run with shell=True).",
+            },
+            "media_key": {
+                "type": "string",
+                "enum": ["play_pause", "next", "prev", "stop"],
+                "description": "Required for media_key; which media transport key to send.",
+            },
         },
         "required": ["action"],
     },
@@ -117,6 +130,18 @@ def _to_binding(data: dict, installed_programs: list[InstalledProgram]) -> Bindi
         if match is None:
             return None
         params = {"layout_id": match}
+    elif action == "set_display_brightness":
+        params = {}
+    elif action == "run_shell_command":
+        command = (data.get("command") or "").strip()
+        if not command:
+            return None
+        params = {"command": command}
+    elif action == "media_key":
+        key = data.get("media_key")
+        if key not in ("play_pause", "next", "prev", "stop"):
+            return None
+        params = {"key": key}
     else:  # set_system_volume
         params = {}
 

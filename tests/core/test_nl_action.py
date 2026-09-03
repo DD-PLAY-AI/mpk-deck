@@ -142,3 +142,36 @@ def test_apply_layout_unknown_name_returns_none(monkeypatch):
     monkeypatch.setattr(nl, "load_layouts", lambda: {})
     client = FakeClient(_tool_use_response({"action": "apply_layout", "layout_name": "nope"}))
     assert parse_nl_action("x", [], client=client) is None
+
+
+def test_nl_proposes_display_brightness():
+    client = FakeClient(_tool_use_response({"action": "set_display_brightness"}))
+    result = parse_nl_action("화면 밝기 조절", PROGRAMS, client=client)
+    assert result.action == "set_display_brightness"
+    assert result.type == "continuous"
+    assert result.params == {}
+
+
+def test_nl_proposes_shell_command():
+    client = FakeClient(_tool_use_response({"action": "run_shell_command", "command": "shutdown /s /t 0"}))
+    result = parse_nl_action("컴퓨터 종료 명령", PROGRAMS, client=client)
+    assert result.action == "run_shell_command"
+    assert result.type == "trigger"
+    assert result.params == {"command": "shutdown /s /t 0"}
+
+
+def test_nl_shell_command_empty_is_rejected():
+    client = FakeClient(_tool_use_response({"action": "run_shell_command", "command": "   "}))
+    assert parse_nl_action("빈 명령", PROGRAMS, client=client) is None
+
+
+def test_nl_proposes_media_key():
+    client = FakeClient(_tool_use_response({"action": "media_key", "media_key": "next"}))
+    result = parse_nl_action("다음 곡", PROGRAMS, client=client)
+    assert result.action == "media_key"
+    assert result.params == {"key": "next"}
+
+
+def test_nl_media_key_bad_value_is_rejected():
+    client = FakeClient(_tool_use_response({"action": "media_key", "media_key": "rewind"}))
+    assert parse_nl_action("되감기", PROGRAMS, client=client) is None

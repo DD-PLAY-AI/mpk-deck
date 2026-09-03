@@ -88,6 +88,25 @@ def test_set_display_brightness_throttles_rapid_calls():
     assert calls == [10, 30]
 
 
+def test_run_shell_command_passes_command_to_runner():
+    calls = []
+    handlers.run_shell_command({"command": "echo hi && dir"}, runner=calls.append)
+    assert calls == ["echo hi && dir"]
+
+
+def test_run_shell_command_strips_whitespace():
+    calls = []
+    handlers.run_shell_command({"command": "  notepad  "}, runner=calls.append)
+    assert calls == ["notepad"]
+
+
+def test_run_shell_command_empty_or_missing_is_noop():
+    calls = []
+    handlers.run_shell_command({"command": "   "}, runner=calls.append)
+    handlers.run_shell_command({}, runner=calls.append)
+    assert calls == []
+
+
 def test_scroll_notches_scales_linearly_with_sensitivity():
     assert handlers._scroll_notches(1.0, 1.0) == 3
     assert handlers._scroll_notches(1.0, 2.0) == 6

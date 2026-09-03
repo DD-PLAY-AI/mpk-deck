@@ -113,6 +113,25 @@ def _default_brightness_setter(percent: int) -> None:
         method.WmiSetBrightness(1, percent)  # (timeout_seconds, brightness_percent)
 
 
+def run_shell_command(params: dict, *, runner=None) -> None:
+    """Fire-and-forget shell command on a pad/key press. No window, no output
+    capture - same trust level as launch_program's arbitrary path."""
+    command = (params.get("command") or "").strip()
+    if not command:
+        logger.info("run_shell_command: no command")
+        return
+    (runner or _default_command_runner)(command)
+
+
+def _default_command_runner(command: str) -> None:
+    subprocess.Popen(
+        command,
+        shell=True,
+        close_fds=True,
+        creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+    )
+
+
 def _default_volume_setter(value: float) -> None:
     from ctypes import POINTER, cast
 

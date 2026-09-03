@@ -33,6 +33,7 @@ from mpk_deck.core.handlers import (
     focus_window,
     launch_program,
     open_url,
+    run_shell_command,
     scroll_horizontal,
     scroll_vertical,
     set_display_brightness,
@@ -65,6 +66,7 @@ def build_action_engine(config: DeckConfig, on_bank_changed, on_continuous, on_t
     engine.register_trigger("open_url", open_url)
     engine.register_trigger("focus_window", focus_window)
     engine.register_trigger("apply_layout", apply_layout)
+    engine.register_trigger("run_shell_command", run_shell_command)
     engine.register_continuous("set_system_volume", set_system_volume)
     engine.register_continuous("set_display_brightness", set_display_brightness)
     engine.register_continuous("scroll_horizontal", scroll_horizontal)

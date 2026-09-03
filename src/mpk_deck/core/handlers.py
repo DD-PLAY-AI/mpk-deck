@@ -1,9 +1,25 @@
 import logging
 import subprocess
 import threading
+import time
 import webbrowser
 
 logger = logging.getLogger(__name__)
+
+
+# Throttle state for continuous handlers whose side effect is expensive
+# (WMI brightness is ~50-100ms/call and a knob emits tens of events/second).
+# ponytail: module dict, fine for the handful of throttled controls we have.
+_LAST_APPLIED: dict[str, float] = {}
+_BRIGHTNESS_MIN_INTERVAL_S = 0.1  # ~10 Hz; brightness is coarse enough that a dropped tick is invisible
+
+
+def _should_apply_now(key: str, min_interval_s: float, now: float) -> bool:
+    last = _LAST_APPLIED.get(key)
+    if last is not None and now - last < min_interval_s:
+        return False
+    _LAST_APPLIED[key] = now
+    return True
 
 
 def launch_program(params: dict) -> None:
@@ -73,6 +89,28 @@ def set_system_volume(params: dict, value: float, *, volume_setter=None) -> None
     """`value` is a normalized 0.0-1.0 level (already converted by the caller)."""
     setter = volume_setter or _default_volume_setter
     setter(max(0.0, min(1.0, value)))
+
+
+def set_display_brightness(
+    params: dict, value: float, *, brightness_setter=None, now: float | None = None
+) -> None:
+    """`value` is a normalized 0.0-1.0 level (knob CC, already converted by translate()).
+    Throttled to ~10 Hz; intermediate values are dropped (the knob keeps sending its
+    current absolute position while it turns)."""
+    if not _should_apply_now(
+        "brightness", _BRIGHTNESS_MIN_INTERVAL_S, now if now is not None else time.monotonic()
+    ):
+        return
+    setter = brightness_setter or _default_brightness_setter
+    setter(round(max(0.0, min(1.0, value)) * 100))
+
+
+def _default_brightness_setter(percent: int) -> None:
+    import win32com.client
+
+    wmi = win32com.client.GetObject(r"winmgmts:\\.\root\WMI")
+    for method in wmi.ExecQuery("SELECT * FROM WmiMonitorBrightnessMethods"):
+        method.WmiSetBrightness(1, percent)  # (timeout_seconds, brightness_percent)
 
 
 def _default_volume_setter(value: float) -> None:

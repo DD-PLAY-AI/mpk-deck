@@ -59,6 +59,35 @@ def test_set_system_volume_passes_through_valid_value():
     assert calls == [0.42]
 
 
+def test_set_display_brightness_converts_normalized_value_to_percent(monkeypatch):
+    handlers._LAST_APPLIED.clear()
+    calls = []
+    handlers.set_display_brightness({}, 0.5, brightness_setter=calls.append, now=0.0)
+    handlers._LAST_APPLIED.clear()
+    handlers.set_display_brightness({}, 0.0, brightness_setter=calls.append, now=0.0)
+    handlers._LAST_APPLIED.clear()
+    handlers.set_display_brightness({}, 1.0, brightness_setter=calls.append, now=0.0)
+    assert calls == [50, 0, 100]
+
+
+def test_set_display_brightness_clamps_out_of_range(monkeypatch):
+    handlers._LAST_APPLIED.clear()
+    calls = []
+    handlers.set_display_brightness({}, 1.7, brightness_setter=calls.append, now=0.0)
+    handlers._LAST_APPLIED.clear()
+    handlers.set_display_brightness({}, -0.3, brightness_setter=calls.append, now=0.0)
+    assert calls == [100, 0]
+
+
+def test_set_display_brightness_throttles_rapid_calls():
+    handlers._LAST_APPLIED.clear()
+    calls = []
+    handlers.set_display_brightness({}, 0.1, brightness_setter=calls.append, now=0.00)
+    handlers.set_display_brightness({}, 0.2, brightness_setter=calls.append, now=0.05)  # dropped
+    handlers.set_display_brightness({}, 0.3, brightness_setter=calls.append, now=0.20)  # applied
+    assert calls == [10, 30]
+
+
 def test_scroll_notches_scales_linearly_with_sensitivity():
     assert handlers._scroll_notches(1.0, 1.0) == 3
     assert handlers._scroll_notches(1.0, 2.0) == 6

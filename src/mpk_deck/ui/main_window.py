@@ -35,6 +35,7 @@ from mpk_deck.core.handlers import (
     open_url,
     scroll_horizontal,
     scroll_vertical,
+    set_display_brightness,
     set_system_volume,
 )
 from mpk_deck.core.layout_store import load_layouts
@@ -65,6 +66,7 @@ def build_action_engine(config: DeckConfig, on_bank_changed, on_continuous, on_t
     engine.register_trigger("focus_window", focus_window)
     engine.register_trigger("apply_layout", apply_layout)
     engine.register_continuous("set_system_volume", set_system_volume)
+    engine.register_continuous("set_display_brightness", set_display_brightness)
     engine.register_continuous("scroll_horizontal", scroll_horizontal)
     engine.register_continuous("scroll_vertical", scroll_vertical)
     engine.load_banks(

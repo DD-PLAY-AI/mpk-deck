@@ -27,6 +27,9 @@ ACTION_KO_LABEL = {
     "scroll_vertical": "세로 스크롤",
     "switch_bank": "뱅크",
     "apply_layout": "레이아웃",
+    "set_display_brightness": "밝기",
+    "run_shell_command": "명령 실행",
+    "media_key": "미디어 키",
 }
 
 _NEUTRAL = "#8a8f9c"
@@ -80,6 +83,20 @@ _ACTION_SVG = {
         '<rect x="12" y="34" width="18" height="18" rx="3" fill="none" stroke="{neutral}" stroke-width="4.5"/>'
         '<rect x="34" y="34" width="18" height="18" rx="3" fill="{accent}" stroke="{accent}" stroke-width="4.5"/>'
     ),
+    "set_display_brightness": (
+        '<circle cx="32" cy="32" r="10" fill="{accent}" stroke="{accent}" stroke-width="4"/>'
+        '<path d="M32 8 V16 M32 48 V56 M8 32 H16 M48 32 H56 M15 15 L21 21 M43 43 L49 49 M49 15 L43 21 M21 43 L15 49" '
+        'fill="none" stroke="{accent}" stroke-width="5" stroke-linecap="round"/>'
+    ),
+    "run_shell_command": (
+        '<rect x="10" y="15" width="44" height="34" rx="5" fill="none" stroke="{neutral}" stroke-width="5"/>'
+        '<path d="M20 25 l8 7 l-8 7 M35 40 H45" fill="none" stroke="{accent}" stroke-width="5" '
+        'stroke-linecap="round" stroke-linejoin="round"/>'
+    ),
+    "media_key": (
+        '<path d="M14 20 L32 32 L14 44 Z" fill="{accent}" stroke="{accent}" stroke-width="4" stroke-linejoin="round"/>'
+        '<path d="M40 20 V44 M50 20 V44" fill="none" stroke="{accent}" stroke-width="6" stroke-linecap="round"/>'
+    ),
 }
 
 # knob variant: accent mark only - the neutral frame is noise at ~18px and fights the needle
@@ -119,6 +136,11 @@ _ACTION_SVG_KNOB = {
         '<rect x="34" y="14" width="16" height="16" rx="3" fill="none" stroke="{accent}" stroke-width="5"/>'
         '<rect x="14" y="34" width="16" height="16" rx="3" fill="none" stroke="{accent}" stroke-width="5"/>'
         '<rect x="34" y="34" width="16" height="16" rx="3" fill="{accent}" stroke="{accent}" stroke-width="5"/>'
+    ),
+    "set_display_brightness": (
+        '<circle cx="32" cy="32" r="10" fill="{accent}" stroke="{accent}" stroke-width="4"/>'
+        '<path d="M32 8 V16 M32 48 V56 M8 32 H16 M48 32 H56 M15 15 L21 21 M43 43 L49 49 M49 15 L43 21 M21 43 L15 49" '
+        'fill="none" stroke="{accent}" stroke-width="5" stroke-linecap="round"/>'
     ),
 }
 

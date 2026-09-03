@@ -39,6 +39,9 @@ ACTION_CHOICES = [
     ("scroll_horizontal", "↔", "Scroll Horizontal"),
     ("scroll_vertical", "↕", "Scroll Vertical"),
     ("apply_layout", "\U0001f5c2", "Layout"),
+    ("set_display_brightness", "\U0001f506", "Display Brightness"),
+    ("run_shell_command", "⌨", "Run Command"),
+    ("media_key", "⏯", "Media Key"),
     ("switch_bank", "➕", "Add Bank"),
 ]
 ACTION_GLYPHS = {name: glyph for name, glyph, _ in ACTION_CHOICES}
@@ -51,6 +54,9 @@ ACTION_TYPE = {
     "scroll_horizontal": "continuous",
     "scroll_vertical": "continuous",
     "apply_layout": "trigger",
+    "set_display_brightness": "continuous",
+    "run_shell_command": "trigger",
+    "media_key": "trigger",
     "switch_bank": "trigger",
 }
 PARAM_KEY = {
@@ -61,6 +67,9 @@ PARAM_KEY = {
     "scroll_horizontal": None,
     "scroll_vertical": None,
     "apply_layout": None,
+    "set_display_brightness": None,
+    "run_shell_command": "command",
+    "media_key": "key",
     "switch_bank": None,
 }
 
@@ -484,6 +493,18 @@ class ActionConfigDialog(QDialog):
         self._sensitivity_slider = self._add_sensitivity_page()
         self._bank_name_edit = self._add_line_page("switch_bank", "뱅크 이름", "예: 트레이딩", "이 컨트롤이 해당 뱅크로 영구 전환됩니다.")
         self._add_layout_page()
+        self._add_note_page(
+            "set_display_brightness", "디스플레이 밝기",
+            "노브를 돌리면 내장 화면 밝기가 따라갑니다. 추가 설정 없음.",
+        )
+        self._command_edit = self._add_line_page(
+            "run_shell_command", "실행할 명령", "예: shutdown /h",
+            "누르면 명령을 실행합니다. 셸 기능(파이프, && 등) 사용 가능.",
+        )
+        self._media_combo = self._add_combo_page(
+            "media_key", "미디어 키",
+            [("play_pause", "재생/일시정지"), ("next", "다음 곡"), ("prev", "이전 곡"), ("stop", "정지")],
+        )
 
         # both scroll actions share the sensitivity page; everything else is 1:1
         self._page_for_action = {
@@ -495,6 +516,9 @@ class ActionConfigDialog(QDialog):
             "scroll_vertical": 4,
             "switch_bank": 5,
             "apply_layout": 6,
+            "set_display_brightness": 7,
+            "run_shell_command": 8,
+            "media_key": 9,
         }
         return frame
 
@@ -571,6 +595,16 @@ class ActionConfigDialog(QDialog):
         layout.addWidget(note_label)
         layout.addStretch(1)
         self._param_stack.addWidget(page)
+
+    def _add_combo_page(self, action: str, label_text: str, options: list[tuple[str, str]]) -> QComboBox:
+        page, layout = self._page_shell(label_text)
+        combo = QComboBox()
+        for value, text in options:
+            combo.addItem(text, value)
+        layout.addWidget(combo)
+        layout.addStretch(1)
+        self._param_stack.addWidget(page)
+        return combo
 
     def _add_sensitivity_page(self) -> QSlider:
         page, layout = self._page_shell("스크롤 감도")
@@ -705,6 +739,7 @@ class ActionConfigDialog(QDialog):
             "launch_program": self._path_edit,
             "open_url": self._url_edit,
             "focus_window": self._title_edit,
+            "run_shell_command": self._command_edit,
         }.get(action)
 
     def _select_action(self, action: str) -> None:
@@ -743,6 +778,11 @@ class ActionConfigDialog(QDialog):
             i = self._layout_combo.findData(binding.params.get("layout_id", ""))
             if i >= 0:
                 self._layout_combo.setCurrentIndex(i)
+            return
+        if binding.action == "media_key":
+            i = self._media_combo.findData(binding.params.get("key", "play_pause"))
+            if i >= 0:
+                self._media_combo.setCurrentIndex(i)
             return
         if binding.action in ("scroll_horizontal", "scroll_vertical"):
             self._sensitivity_slider.setValue(round(float(binding.params.get("sensitivity", 1.0)) * 10))
@@ -797,6 +837,11 @@ class ActionConfigDialog(QDialog):
             return Binding(
                 control=self._control, type="trigger", action="apply_layout",
                 params={"layout_id": self._layout_combo.currentData() or ""}, label=label, icon=icon,
+            )
+        if action == "media_key":
+            return Binding(
+                control=self._control, type="trigger", action="media_key",
+                params={"key": self._media_combo.currentData() or "play_pause"}, label=label, icon=icon,
             )
         key = PARAM_KEY.get(action)
         edit = self._param_edit_for(action)

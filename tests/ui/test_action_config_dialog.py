@@ -132,3 +132,37 @@ def test_apply_layout_keeps_the_label_field_enabled(monkeypatch):
     dialog = acd.ActionConfigDialog("pad_1")
     dialog._select_action("apply_layout")
     assert dialog._label_edit.isEnabled() is True
+
+
+def test_dialog_offers_the_three_new_actions():
+    dialog = ActionConfigDialog("knob_2")
+    assert set(dialog._tiles) >= {"set_display_brightness", "run_shell_command", "media_key"}
+
+
+def test_shell_command_round_trips_through_result_binding():
+    dialog = ActionConfigDialog("pad_1")
+    dialog._select_action("run_shell_command")
+    dialog._command_edit.setText("shutdown /h")
+    binding = dialog.result_binding()
+    assert binding.action == "run_shell_command"
+    assert binding.type == "trigger"
+    assert binding.params == {"command": "shutdown /h"}
+
+
+def test_media_key_round_trips_and_reloads():
+    dialog = ActionConfigDialog("pad_1")
+    dialog._select_action("media_key")
+    index = dialog._media_combo.findData("next")
+    dialog._media_combo.setCurrentIndex(index)
+    binding = dialog.result_binding()
+    assert binding.action == "media_key"
+    assert binding.params == {"key": "next"}
+
+    reloaded = ActionConfigDialog("pad_1", binding)
+    assert reloaded._media_combo.currentData() == "next"
+
+
+def test_brightness_selects_its_page():
+    dialog = ActionConfigDialog("knob_2")
+    dialog._select_action("set_display_brightness")
+    assert dialog._param_stack.currentIndex() == dialog._page_for_action["set_display_brightness"]

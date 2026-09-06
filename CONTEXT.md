@@ -2,7 +2,7 @@
 
 아키텍처(코드 기준), 기술 스택, 하드웨어 MIDI 매핑, 현재 진행 상태(A~F).
 프로젝트 규칙·정체성은 `CLAUDE.md`, 워크스페이스 공통은 `C:\DC\DD\CLAUDE.md`
-+ `C:\DC\DD\ROADMAP.md`(결정 이력은 `C:\DC\DD\docs\DECISIONS.md`).
++ `C:\DC\DD\ROADMAP.md`(결정 이력은 `C:\DC\DD\docs\decisions\mpk-deck.md`, 인덱스 `docs\DECISIONS.md`).
 
 이 파일은 모든 에이전트(Claude·Codex) 공용이다. mpk-deck 코드 작업 전에 읽을 것.
 
@@ -22,8 +22,9 @@
 > - E: `KnobWidget.wheelEvent`(휠 → 값 누적) → `ExpandedView.knob_scrolled` →
 >   `MainWindow._on_knob_scrolled` → `engine.set_continuous`.
 >
-> **batch B/C/D/E 전부 커밋됨(39 commits ahead, 미푸시), 실기 미검증.** 변경의
-> 배경·근거는 `C:\DC\DD\docs\DECISIONS.md` 2026-09-02 항목. 코드가 최종
+> **batch B/C/D/E 전부 `main`에 머지·푸시 완료(2026-09-05, `origin/main`과 동기).
+> 실기 미검증.** 변경의
+> 배경·근거는 `C:\DC\DD\docs\decisions\mpk-deck.md` 2026-09-02 항목. 코드가 최종
 > 신뢰원. 실기 검증 후 이 파일 UI 상세를 전면 갱신할 것.
 
 ---
@@ -306,7 +307,7 @@ UI, Action Config Dialog, `core/nl_action.py`). pytest 전체 통과.
   로드맵 체크리스트 항목 닫음. 2026-08-23 세 차례 재설계 끝에 순수 Qt
   수동 처리(`ui/window_grip.py`)로 정착 — 자세한 경위와 이전 두 시도
   (그립 위치 버그 → 여백 확대 + 커서 → 네이티브 `WM_NCHITTEST`, 셋 다
-  실사용 검증에서 실패)는 위 아키텍처 섹션과 `C:\DC\DD\docs\DECISIONS.md`
+  실사용 검증에서 실패)는 위 아키텍처 섹션과 `C:\DC\DD\docs\decisions\mpk-deck.md`
   2026-08-23 항목 참고.
   - `MainWindow`/Qt 위젯은 정책상 pytest 커버 대상이 아니라서, 오프스크린
     스모크 스크립트로 검증: 실제 `QMouseEvent`를 위젯에 직접 주입해서
@@ -324,7 +325,7 @@ UI, Action Config Dialog, `core/nl_action.py`). pytest 전체 통과.
   `ANTHROPIC_API_KEY` 넣고 `python -m mpk_deck`에서 다이얼로그 열어 확인 필요.
 - `ExpandedView` UI 다듬기(배경/버튼/노브 스타일, 비율 스케일링, 15백+10흑
   진짜 피아노 건반) 완료 — 2026-08-25 `dbf75b3`로 커밋/푸시, 사용자 라이브
-  확인 완료. 자세한 내용은 `C:\DC\DD\docs\DECISIONS.md` 2026-08-25 항목 참고.
+  확인 완료. 자세한 내용은 `C:\DC\DD\docs\decisions\mpk-deck.md` 2026-08-25 항목 참고.
 
 다음 라운드 — "매일 쓰는 덱" 준비, 서로 독립적인 서브시스템으로 쪼개서
 아래 순서대로 진행 (각자 자기 차례에 `superpowers:brainstorming`부터,

@@ -87,15 +87,14 @@ card:
   패드 뱅크로 고정), 건반 note 48-72 -> `key_0`..`key_24`(`note-48`,
   `KEYBED_BASE_NOTE`/`KEYBED_KEY_COUNT` 상수), 노브 **CC 2-9 -> `knob_1`..
   `knob_8`**(`{cc: f"knob_{cc-1}"}`), `pitchwheel` -> `joystick_x`,
-  **CC 1 -> `joystick_y`(전용)**. Y축은 이 프리셋에서 **unipolar**: 정지=0,
-  최대=127 한 방향, `value/127`로 [0.0,1.0] 디코딩(bipolar `(v-64)/64` 아님).
+  **CC 1 -> `joystick_y`(전용)**. Y축은 이 프리셋에서 **bipolar**: 아래=0,
+  정지=64, 위=127이며 [-1.0,1.0]으로 디코딩한다(2026-09-20 실기 재확인).
   MainWindow가 `JOYSTICK_DEADZONE=0.06` 미만은 0으로 스냅(스프링 팟 지터 +
   재캡처 오류 시 idle 스크롤 폭주 방지).
   **⚠️ 이 매핑은 장치에 커스텀 AKAI 에디터 프리셋이 로드/저장돼 있어야 성립.**
   노브 1-8을 CC 2-9로 시프트(팩토리는 CC 1-8), 그래서 CC 1이 조이스틱 Y 전용.
   팩토리 상태나 다른 호스트/공장 초기화 후엔 노브가 1칸씩 밀리고 노브 1이 CC1로
-  조이스틱을 움직인다 — 코드는 이 불일치를 감지/경고하지 않음. 조이스틱 Y
-  bipolar 전환도 에디터 작업 대기 중(spec Open Question).
+  조이스틱을 움직인다 — 코드는 이 불일치를 감지/경고하지 않음.
   건반 범위 밖(옥타브 시프트) 노트와 그 외 note/CC는
   `None`으로 drop — 패드가 32-39라 옥타브 다운 시 저음 건반이 이 범위와 겹칠 수
   있음(문서화된 제약, 사용자가 OCT 버튼 안 씀). `translate()` 외에
@@ -289,7 +288,7 @@ card:
     `LayoutCaptureDialog`, 열린 창 체크리스트). `Binding.label`/`icon`은 이
     액션에도 적용됨(switch_bank과 달리 잠기지 않음).
   - **미완**: `config/actions.yaml` + `QSettings`를 `user_data_dir()` 아래로
-    옮기는 마이그레이션(별도 태스크). 조이스틱 Y bipolar Editor 작업.
+    옮기는 마이그레이션(별도 태스크).
 
 ## 기술 스택 / 실행
 

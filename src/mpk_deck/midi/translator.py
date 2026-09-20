@@ -14,9 +14,8 @@ KEYBED_BASE_NOTE = 48  # C3 - lowest key at the MPK mini MK2's default octave
 KEYBED_KEY_COUNT = 25  # 2 octaves + 1, matches the physical keybed and ui/keybed.py NUM_KEYS
 BANK_B_PAD_NOTES = frozenset(range(44, 48))  # the other pad bank's low notes, used only for the "switch back" hint
 
-# The joystick Y axis is CC 1. This unit's preset makes it unipolar: value 0 at
-# rest, climbing to 127 at full deflection (one direction only), so it decodes to
-# [0.0, 1.0], not a bipolar [-1.0, 1.0]. CC 1 no longer carries any knob.
+# The joystick Y axis is CC 1. It is bipolar: 0 at full down, 64 at rest, and
+# 127 at full up. CC 1 no longer carries any knob.
 JOYSTICK_Y_CC = 1
 
 
@@ -40,7 +39,7 @@ def translate(message: mido.Message) -> Optional[ControlEvent]:
         return ControlEvent(control="joystick_x", kind="continuous", value=value)
     if message.type == "control_change":
         if message.control == JOYSTICK_Y_CC:
-            value = max(0.0, min(1.0, message.value / 127))
+            value = (message.value - 64) / (63 if message.value >= 64 else 64)
             return ControlEvent(control="joystick_y", kind="continuous", value=value)
         control = KNOB_CC_TO_CONTROL.get(message.control)
         if control is None:

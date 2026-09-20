@@ -111,8 +111,7 @@ def test_translate_pitchwheel_negative_extreme_is_exactly_minus_one():
 
 
 def test_translate_joystick_y_cc_rest_returns_zero():
-    # This unit's Y axis is unipolar: value 0 at rest, not a bipolar 64 center.
-    msg = mido.Message("control_change", control=1, value=0)
+    msg = mido.Message("control_change", control=1, value=64)
     assert translate(msg) == ControlEvent(control="joystick_y", kind="continuous", value=0.0)
 
 
@@ -121,11 +120,9 @@ def test_translate_joystick_y_cc_max_is_one():
     assert translate(msg) == ControlEvent(control="joystick_y", kind="continuous", value=1.0)
 
 
-def test_translate_joystick_y_cc_never_goes_negative():
-    for value in (0, 1, 32, 64, 127):
-        event = translate(mido.Message("control_change", control=1, value=value))
-        assert event.control == "joystick_y"
-        assert event.value >= 0.0
+def test_translate_joystick_y_cc_min_is_minus_one():
+    msg = mido.Message("control_change", control=1, value=0)
+    assert translate(msg) == ControlEvent(control="joystick_y", kind="continuous", value=-1.0)
 
 
 def test_translate_cc1_is_joystick_not_a_knob():

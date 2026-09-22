@@ -1,4 +1,4 @@
-active_bank: ai_2
+active_bank: bank_a
 switch_bindings:
   key_0: bank_a
   key_2: ai
@@ -26,9 +26,39 @@ banks:
       action: launch_program
       params:
         path: C:\Program Files\Google\Chrome\Application\chrome.exe
+    - control: joystick_x
+      type: continuous
+      action: scroll_horizontal
+      params:
+        sensitivity: 1.0
+    - control: joystick_y
+      type: continuous
+      action: scroll_vertical
+      params:
+        sensitivity: 1.0
   ai:
     name: AI
-    bindings: []
+    bindings:
+    - control: joystick_x
+      type: continuous
+      action: scroll_horizontal
+      params:
+        sensitivity: 1.0
+    - control: joystick_y
+      type: continuous
+      action: scroll_vertical
+      params:
+        sensitivity: 1.0
   ai_2:
     name: AI
-    bindings: []
+    bindings:
+    - control: joystick_x
+      type: continuous
+      action: scroll_horizontal
+      params:
+        sensitivity: 1.0
+    - control: joystick_y
+      type: continuous
+      action: scroll_vertical
+      params:
+        sensitivity: 1.0

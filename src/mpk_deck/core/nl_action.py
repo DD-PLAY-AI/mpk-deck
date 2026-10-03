@@ -1,8 +1,11 @@
 import logging
 import os
+import time
 from typing import Optional
 
 import anthropic
+
+from mpk_deck.core import llm_registry
 
 from mpk_deck.core.action_registry import Binding
 from mpk_deck.core.layout_store import load_layouts
@@ -10,7 +13,6 @@ from mpk_deck.core.program_finder import InstalledProgram
 
 logger = logging.getLogger(__name__)
 
-MODEL = "claude-haiku-4-5"
 
 ACTION_TYPE = {
     "launch_program": "trigger",
@@ -80,16 +82,28 @@ def parse_nl_action(
     prompt = f"User request: {text}\n\nInstalled programs (for launch_program only): {program_names}"
 
     try:
+        call = llm_registry.resolve("mpk.nl_action")
+    except (llm_registry.RegistryError, KeyError) as exc:
+        # mpk-deck runs on its own; without the registry only the LLM feature is off.
+        logger.warning("parse_nl_action: LLM registry unavailable: %s", exc)
+        return None
+    step = call.chain[0]
+    started = time.monotonic()
+    try:
         response = client.messages.create(
-            model=MODEL,
-            max_tokens=256,
+            model=step.model,
+            max_tokens=step.extra.get("max_tokens", 256),
             tools=[_TOOL],
             tool_choice={"type": "tool", "name": "propose_binding", "disable_parallel_tool_use": True},
             messages=[{"role": "user", "content": prompt}],
         )
-    except Exception:
+    except Exception as exc:
+        llm_registry.log_call("mpk.nl_action", step, attempt=1, elapsed_s=time.monotonic() - started, ok=False, error=str(exc))
         logger.exception("parse_nl_action: API call failed")
         return None
+    usage = getattr(response, "usage", None)
+    llm_registry.log_call("mpk.nl_action", step, attempt=1, elapsed_s=time.monotonic() - started, ok=True,
+                          tokens_in=getattr(usage, "input_tokens", None), tokens_out=getattr(usage, "output_tokens", None))
 
     tool_block = next((b for b in response.content if getattr(b, "type", None) == "tool_use"), None)
     if tool_block is None:

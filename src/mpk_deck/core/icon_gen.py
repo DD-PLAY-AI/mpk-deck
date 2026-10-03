@@ -10,25 +10,18 @@ Returns an SVG *body* (elements only, no <svg> wrapper) that may contain the
 
 import logging
 import os
+import time
 import xml.etree.ElementTree as ET
 from typing import Optional
 
 import anthropic
 
+from mpk_deck.core import llm_registry
+
 logger = logging.getLogger(__name__)
 
-MODEL = "claude-haiku-4-5"
 
-_SYSTEM = (
-    "You draw tiny monochrome-style UI icons for a hardware control-surface app. "
-    "Output an SVG body only (child elements, no <svg> wrapper), designed on a "
-    "0 0 64 64 viewBox. Rules: use <path>, <rect>, <circle>, <line>, <polyline>, "
-    "<polygon> only. Strokes ~5 wide, stroke-linecap=round, stroke-linejoin=round. "
-    "Exactly two colours, given as the literal tokens {accent} (the main subject) "
-    "and {neutral} (supporting/context shapes). No text, no gradients, no filters, "
-    "no <image>, no <use>, no external refs, no scripts. At most 6 elements. "
-    "Geometric and legible at 20px."
-)
+# The system prompt lives in ai-hub/prompts/mpk.icon_gen.txt (T-0106).
 
 _TOOL = {
     "name": "emit_icon",
@@ -82,17 +75,29 @@ def generate_icon_svg(description: str, *, client: Optional["anthropic.Anthropic
         client = anthropic.Anthropic(api_key=api_key)
 
     try:
+        call = llm_registry.resolve("mpk.icon_gen")
+    except (llm_registry.RegistryError, KeyError) as exc:
+        # mpk-deck runs on its own; without the registry only the LLM feature is off.
+        logger.warning("generate_icon_svg: LLM registry unavailable: %s", exc)
+        return None
+    step = call.chain[0]
+    started = time.monotonic()
+    try:
         response = client.messages.create(
-            model=MODEL,
-            max_tokens=512,
-            system=_SYSTEM,
+            model=step.model,
+            max_tokens=step.extra.get("max_tokens", 512),
+            system=call.system_prompt,
             tools=[_TOOL],
             tool_choice={"type": "tool", "name": "emit_icon", "disable_parallel_tool_use": True},
             messages=[{"role": "user", "content": f"Icon for: {description}"}],
         )
-    except Exception:
+    except Exception as exc:
+        llm_registry.log_call("mpk.icon_gen", step, attempt=1, elapsed_s=time.monotonic() - started, ok=False, error=str(exc))
         logger.exception("generate_icon_svg: API call failed")
         return None
+    usage = getattr(response, "usage", None)
+    llm_registry.log_call("mpk.icon_gen", step, attempt=1, elapsed_s=time.monotonic() - started, ok=True,
+                          tokens_in=getattr(usage, "input_tokens", None), tokens_out=getattr(usage, "output_tokens", None))
 
     tool_block = next((b for b in response.content if getattr(b, "type", None) == "tool_use"), None)
     if tool_block is None:
